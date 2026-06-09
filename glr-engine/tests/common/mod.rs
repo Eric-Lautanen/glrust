@@ -4,7 +4,6 @@ use glr_core::{Grammar, ProductionId, StateId, SymbolId};
 use glr_lexer::{Lexer, Token};
 use std::vec::Vec;
 
-/// Build a simple test grammar from symbol names and productions.
 pub struct TestGrammarBuilder {
     symbols: Vec<(String, SymbolKind)>,
     productions: Vec<(u32, Vec<u32>, i32)>,
@@ -126,11 +125,9 @@ impl TestGrammarBuilder {
     }
 }
 
-/// A simple lexer that matches exact byte strings to token symbols.
 pub struct TestLexer<'a> {
     source: &'a [u8],
-    cursor: usize,
-    /// (symbol_id, literal_bytes)
+    cursor: u32,
     token_map: Vec<(u32, &'a [u8])>,
 }
 
@@ -146,21 +143,22 @@ impl<'a> TestLexer<'a> {
 
 impl<'a> Lexer for TestLexer<'a> {
     fn next_token(&mut self, _valid_symbols: &[bool]) -> Option<Token> {
-        if self.cursor >= self.source.len() {
+        let len = self.source.len() as u32;
+        if self.cursor >= len {
             return None;
         }
-        while self.cursor < self.source.len() && self.source[self.cursor].is_ascii_whitespace() {
+        while self.cursor < len && self.source[self.cursor as usize].is_ascii_whitespace() {
             self.cursor += 1;
         }
-        if self.cursor >= self.source.len() {
+        if self.cursor >= len {
             return None;
         }
 
-        let remaining = &self.source[self.cursor..];
+        let remaining = &self.source[self.cursor as usize..];
         for &(sym_id, literal) in &self.token_map {
             if remaining.starts_with(literal) {
                 let start = self.cursor;
-                self.cursor += literal.len();
+                self.cursor += literal.len() as u32;
                 return Some(Token {
                     kind: SymbolId(sym_id),
                     start_byte: start,
@@ -178,11 +176,11 @@ impl<'a> Lexer for TestLexer<'a> {
         })
     }
 
-    fn cursor(&self) -> usize {
+    fn cursor(&self) -> u32 {
         self.cursor
     }
 
-    fn reset_to(&mut self, byte_offset: usize) {
+    fn reset_to(&mut self, byte_offset: u32) {
         self.cursor = byte_offset;
     }
 }

@@ -1,8 +1,8 @@
 use crate::SymbolId;
 use alloc::vec::Vec;
 
-/// Immutable parse tree.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Tree {
     pub root: Option<Node>,
 }
@@ -19,8 +19,8 @@ impl Tree {
     }
 }
 
-/// A node in the parse tree. Children are stored inline.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Node {
     pub kind: SymbolId,
     pub start_byte: u32,
@@ -38,25 +38,17 @@ impl Node {
     pub fn named_children(&self) -> impl Iterator<Item = &Node> {
         self.children.iter().filter(|c| c.is_named)
     }
-
-    pub fn child_by_field_name(&self, _name: &str) -> Option<&Node> {
-        // field names will be tracked via field_id in Phase 1
-        None
-    }
 }
 
-/// Tree cursor for depth-first walk.
 pub struct TreeCursor<'a> {
     stack: Vec<NodeIter<'a>>,
 }
 
 impl<'a> TreeCursor<'a> {
-    /// Current node at the cursor.
     pub fn node(&self) -> Option<&'a Node> {
         self.stack.last().and_then(|iter| iter.current())
     }
 
-    /// Enter the current node's first child.
     pub fn goto_first_child(&mut self) -> bool {
         match self.node() {
             Some(current) if !current.children.is_empty() => {
@@ -67,7 +59,6 @@ impl<'a> TreeCursor<'a> {
         }
     }
 
-    /// Step to the next sibling of the current node.
     pub fn goto_next_sibling(&mut self) -> bool {
         match self.stack.last_mut() {
             Some(iter) => {
@@ -78,7 +69,6 @@ impl<'a> TreeCursor<'a> {
         }
     }
 
-    /// Move back up to the parent.
     pub fn goto_parent(&mut self) -> bool {
         if self.stack.len() <= 1 {
             return false;
@@ -111,9 +101,6 @@ impl<'a> NodeIter<'a> {
     }
 }
 
-// ── Mutable tree (built during parse) ──────────────────────────────
-
-/// Mutable tree used during parsing; frozen to `Tree` when complete.
 #[derive(Debug)]
 pub struct MutableTree {
     pub nodes: Vec<InternalNode>,
@@ -128,12 +115,10 @@ impl MutableTree {
         }
     }
 
-    /// Allocate a new node and return its index.
     pub fn alloc(&mut self, mut node: InternalNode) -> u32 {
         let id = self.next_node_id;
         self.next_node_id += 1;
 
-        // Fix up child linkages
         let first_child = node.first_child;
         let named_count = count_named_children(&self.nodes, first_child);
         node.named_child_count = named_count;
@@ -141,7 +126,6 @@ impl MutableTree {
 
         self.nodes.push(node);
 
-        // Set parent pointer on children
         let mut c = first_child;
         while let Some(child_id) = c {
             if let Some(child_node) = self.nodes.get_mut(child_id as usize) {
@@ -153,22 +137,25 @@ impl MutableTree {
         id
     }
 
-    /// Create a leaf node for a token.
     pub fn alloc_token(
         &mut self,
         kind: SymbolId,
         start_byte: u32,
         end_byte: u32,
+        start_row: u32,
+        start_col: u32,
+        end_row: u32,
+        end_col: u32,
         is_named: bool,
     ) -> u32 {
         self.alloc(InternalNode {
             kind,
             start_byte,
             end_byte,
-            start_row: 0,
-            start_col: 0,
-            end_row: 0,
-            end_col: 0,
+            start_row,
+            start_col,
+            end_row,
+            end_col,
             child_count: 0,
             named_child_count: if is_named { 1 } else { 0 },
             first_child: None,
@@ -182,13 +169,11 @@ impl MutableTree {
         })
     }
 
-    /// Freeze the mutable tree into an immutable `Tree`.
     pub fn freeze(&self) -> Tree {
         if self.nodes.is_empty() {
             return Tree { root: None };
         }
 
-        // Find the root (node with no parent)
         let root_internal = self
             .nodes
             .iter()
@@ -262,6 +247,7 @@ fn count_children(nodes: &[InternalNode], first_child: Option<u32>) -> u32 {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct InternalNode {
     pub kind: SymbolId,
     pub start_byte: u32,

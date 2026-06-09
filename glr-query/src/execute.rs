@@ -1,7 +1,6 @@
 use super::query::{Query, QueryMatch};
-use glr_core::Node;
 
-pub type NodeRef = Node;
+pub use super::query::NodeRef;
 
 pub struct QueryMatches<'a> {
     query: &'a Query,

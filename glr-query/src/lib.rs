@@ -5,4 +5,4 @@ pub mod execute;
 pub mod query;
 
 pub use query::{Capture, Query, QueryMatch};
-pub use execute::{QueryMatches, Queryable};
+pub use execute::{NodeRef, QueryMatches, Queryable};

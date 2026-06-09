@@ -15,8 +15,6 @@ impl Parser {
         Self { grammar }
     }
 
-    /// Fully parse `source` using the given lexer.
-    /// Never fails — ERROR nodes are inserted for invalid syntax.
     pub fn parse_with_lexer<L: Lexer>(&self, source: &[u8], lexer: &mut L) -> Tree {
         let start_state = StateId(0);
         let mut gss = Gss::new(start_state);
@@ -39,13 +37,13 @@ impl Parser {
 
                 match action {
                     ParseTableEntry::Shift { state: target } => {
-                        let pos = lexer.cursor() as u32;
+                        let pos = lexer.cursor();
 
-                        // Create a leaf node for the shifted token
                         let _leaf = tree.alloc_token(
                             token.kind,
-                            token.start_byte as u32,
-                            token.end_byte as u32,
+                            token.start_byte,
+                            token.end_byte,
+                            0, 0, 0, 0,
                             false,
                         );
 
@@ -58,7 +56,6 @@ impl Parser {
                         dynamic_precedence: _,
                         production_id: _,
                     } => {
-                        // Reduce: will be fully implemented with RNGLR
                         shifted = true;
                     }
                     ParseTableEntry::Accept => {
@@ -69,20 +66,18 @@ impl Parser {
             }
 
             if !shifted && gss.head_count() > 0 {
-                // All heads dead for this token — error recovery.
-                // Insert an ERROR node from the last good position.
                 let _error_node = tree.alloc_token(
                     SymbolId::ERROR,
                     error_pos,
-                    token.start_byte as u32,
+                    token.start_byte,
+                    0, 0, 0, 0,
                     true,
                 );
 
-                // Skip tokens until we find one that can be shifted.
-                error_pos = token.end_byte as u32;
+                error_pos = token.end_byte;
                 let mut recovered = false;
                 while let Some(skip) = lexer.next_token(valid) {
-                    error_pos = skip.end_byte as u32;
+                    error_pos = skip.end_byte;
 
                     for &head_idx in &gss.heads {
                         let state = gss.nodes[head_idx as usize].state;
@@ -109,7 +104,6 @@ impl Parser {
         tree.freeze()
     }
 
-    /// Full parse using a default built-in lexer (requires Phase 1).
     pub fn parse(&self, _source: &[u8]) -> Tree {
         Tree { root: None }
     }

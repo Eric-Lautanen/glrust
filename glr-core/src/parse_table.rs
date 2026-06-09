@@ -1,13 +1,8 @@
 use crate::{StateId, SymbolId};
 use alloc::vec::Vec;
 
-/// The LR parse table, split into large (dense) and small (sparse) states.
-///
-/// Lookup: for a given state `s` and symbol `sym`:
-/// - If `s < large_state_count`: index into `large_entries` at offset
-///   `s * symbol_count + sym`
-/// - Otherwise: binary search `small_states[s - large_state_count]`
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ParseTable {
     pub symbol_count: u32,
     pub state_count: u32,
@@ -37,14 +32,14 @@ impl ParseTable {
     }
 }
 
-/// A sparse row for small states: sorted `(symbol, action)` pairs.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SmallStateRow {
     pub entries: Vec<(u32, ParseTableEntry)>,
 }
 
 impl SmallStateRow {
-    fn lookup(&self, symbol: usize) -> Option<ParseTableEntry> {
+    pub fn lookup(&self, symbol: usize) -> Option<ParseTableEntry> {
         self.entries
             .binary_search_by_key(&(symbol as u32), |&(s, _)| s)
             .ok()
@@ -53,6 +48,7 @@ impl SmallStateRow {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ParseTableEntry {
     Shift { state: StateId },
     Reduce { symbol: SymbolId, child_count: u16, dynamic_precedence: i32, production_id: u16 },

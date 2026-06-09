@@ -1,4 +1,8 @@
+use glr_core::Node;
 use std::vec::Vec;
+
+/// Re-export of Node for use across query sub-modules.
+pub type NodeRef = Node;
 
 pub struct Query {
     pub states: Vec<QueryState>,
@@ -13,5 +17,5 @@ pub struct Capture {
 
 pub struct QueryMatch {
     pub pattern_index: usize,
-    pub captures: Vec<(usize, crate::execute::NodeRef)>,
+    pub captures: Vec<(usize, NodeRef)>,
 }

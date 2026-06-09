@@ -4,6 +4,7 @@ use crate::{ProductionId, SymbolId};
 use alloc::vec::Vec;
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Grammar {
     pub version: u32,
     pub symbol_count: u32,
@@ -34,6 +35,7 @@ impl Grammar {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Production {
     pub id: ProductionId,
     pub nonterminal: SymbolId,

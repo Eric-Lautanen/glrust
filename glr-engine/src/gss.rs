@@ -4,8 +4,8 @@ use core::fmt;
 
 /// A node in the Graph-Structured Stack (GSS).
 ///
-/// Keyed by `(state, input_position)`. When two stack heads reach the same
-/// state at the same input position, they share a single GSS node.
+/// Keyed by `(state, input_position)`. When multiple parse heads reach
+/// the same state at the same input position, they share a single GSS node.
 #[derive(Clone)]
 pub struct GssNode {
     pub state: StateId,
@@ -35,7 +35,9 @@ pub struct GssEdge {
 #[derive(Debug, Clone)]
 pub struct Gss {
     pub nodes: Vec<GssNode>,
-    /// Active heads — indices into `nodes` that have not been merged away.
+    /// Active heads — indices into `nodes`. Multiple heads may point to the
+    /// same GSS node (that is the GLR merge: when two parse paths converge
+    /// on the same state at the same input position).
     pub heads: Vec<u32>,
 }
 
@@ -52,16 +54,25 @@ impl Gss {
         }
     }
 
-    /// Add a new GSS node and register it as a head. If a node at the same
-    /// `(state, position)` already exists, merge by adding this caller as a
-    /// head pointing to the existing node (returns the existing index).
+    /// Add or find a GSS node at `(state, position)`.
+    ///
+    /// If a node already exists at this key, it is reused and a **new head**
+    /// is registered pointing to it (the GLR merge). This is what makes GLR
+    /// O(n) in practice for unambiguous grammars.
+    ///
+    /// Returns the index of the node.
     pub fn add_node(&mut self, state: StateId, position: u32) -> u32 {
-        for &i in &self.heads {
-            let n = &self.nodes[i as usize];
+        // Check all nodes (not just heads) for a merge candidate.
+        for (i, n) in self.nodes.iter().enumerate() {
             if n.state == state && n.position == position {
-                return i;
+                let idx = i as u32;
+                // Register a new head at the existing node — this is the
+                // GLR merge: two parse paths now share this node.
+                self.heads.push(idx);
+                return idx;
             }
         }
+        // No existing node — create a new one.
         let id = self.nodes.len() as u32;
         self.nodes.push(GssNode {
             state,
@@ -79,7 +90,7 @@ impl Gss {
             .push(GssEdge { target: to, subtree, production_id });
     }
 
-    /// Remove a head by index.
+    /// Remove a head by index (swap-removes for O(1)).
     pub fn remove_head(&mut self, index: usize) {
         self.heads.swap_remove(index);
     }
