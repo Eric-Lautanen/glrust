@@ -57,13 +57,15 @@ impl Gss {
     }
 
     /// Find or create a GSS node at `(state, position)`.
-    /// If the node already exists, register an additional head for it (GLR merge).
-    pub fn add_node(&mut self, state: StateId, position: u32) -> u32 {
+    ///
+    /// Returns `(id, is_new)`. The caller is responsible for deciding whether
+    /// to enqueue `id` as a head — this method never touches `self.heads`.
+    /// Separating node allocation from head management avoids spurious duplicate
+    /// head entries during GLR merge.
+    pub fn find_or_create_node(&mut self, state: StateId, position: u32) -> (u32, bool) {
         for (i, n) in self.nodes.iter().enumerate() {
             if n.state == state && n.position == position {
-                let idx = i as u32;
-                self.heads.push(idx);
-                return idx;
+                return (i as u32, false);
             }
         }
         let id = self.nodes.len() as u32;
@@ -72,8 +74,7 @@ impl Gss {
             position,
             edges: Vec::new(),
         });
-        self.heads.push(id);
-        id
+        (id, true)
     }
 
     /// Add an edge from `child` to `parent`, labeled with a tree node index.
@@ -84,9 +85,14 @@ impl Gss {
     }
 
     /// Collect tree-node chains for every path of length `depth` from `node_idx`.
-    /// Returns (ancestor_index, subtree_node_indices[0..depth]) for each valid path.
-    /// Children are returned in RHS order (leftmost-first, i.e. the order they
-    /// were pushed onto the LR stack).
+    /// Returns `(ancestor_index, children)` for each valid path where
+    /// `children[0]` is the leftmost (earliest-shifted) RHS symbol and
+    /// `children[depth-1]` is the rightmost.
+    ///
+    /// The LR stack grows left-to-right as symbols are shifted, so the current
+    /// node holds the *rightmost* symbol of the RHS and the recursion unwinds
+    /// toward the *leftmost*. We therefore prepend (via index 0) rather than
+    /// append, giving natural LR order without a post-pass reversal.
     pub fn ancestor_paths(&self, node_idx: u32, depth: u32) -> Vec<(u32, Vec<u32>)> {
         if depth == 0 {
             return vec![(node_idx, Vec::new())];
@@ -95,7 +101,8 @@ impl Gss {
         if let Some(node) = self.nodes.get(node_idx as usize) {
             for edge in &node.edges {
                 for (ancestor, mut chain) in self.ancestor_paths(edge.parent, depth - 1) {
-                    chain.push(edge.tree_node);
+                    // Prepend so that the leftmost RHS symbol ends at index 0.
+                    chain.insert(0, edge.tree_node);
                     result.push((ancestor, chain));
                 }
             }

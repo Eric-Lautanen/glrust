@@ -22,13 +22,17 @@ pub struct Grammar {
 }
 
 impl Grammar {
+    /// Returns the name of the symbol with the given id, or `"<unknown>"` if
+    /// the id is out of range. `SymbolId::ERROR` (`u32::MAX`) always hits the
+    /// out-of-range path and returns `"<unknown>"` — this is intentional.
+    #[must_use]
     pub fn symbol_name(&self, id: SymbolId) -> &str {
         self.symbols
             .get(id.0 as usize)
-            .map(|s| s.name.as_str())
-            .unwrap_or("<unknown>")
+            .map_or("<unknown>", |s| s.name.as_str())
     }
 
+    #[must_use]
     pub fn production(&self, id: ProductionId) -> Option<&Production> {
         self.productions.get(id.0 as usize)
     }

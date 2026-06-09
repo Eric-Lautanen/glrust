@@ -18,13 +18,19 @@ pub use symbol::{Symbol, SymbolKind};
 pub use tree::{InternalNode, MutableTree, Node, Tree, TreeCursor};
 
 /// Newtype wrapper around a `u32` identifying an LR parser state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// # Note on epsilon-log keys in `glr-engine`
+/// The parser uses `(state.0 as u16, production_id)` as a `BTreeSet` key for
+/// the ε-reduction dedup log. This truncates state IDs above 65 535. For
+/// grammars whose parse tables stay well under that limit this is fine; for
+/// larger grammars the key type should be widened to `(u32, u16)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StateId(pub u32);
 
 /// Newtype wrapper around a `u32` identifying a grammar symbol (terminal or
 /// non-terminal).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SymbolId(pub u32);
 

@@ -10,18 +10,24 @@ pub struct ParseTableAction {
 }
 
 impl ParseTableAction {
+    #[must_use]
     pub fn single(entry: ParseTableEntry) -> Self {
         Self {
             entries: vec![entry],
         }
     }
 
+    #[must_use]
     pub fn multiple(entries: Vec<ParseTableEntry>) -> Self {
         Self { entries }
     }
 
+    #[must_use]
     pub fn is_error(&self) -> bool {
-        self.entries.len() == 1 && self.entries[0] == ParseTableEntry::Error
+        // A cell is only a pure error if every entry in it is Error.
+        // A GLR-conflicted cell that contains Error alongside a Shift or
+        // Reduce is not an error cell — it has at least one valid action.
+        !self.entries.is_empty() && self.entries.iter().all(|e| *e == ParseTableEntry::Error)
     }
 }
 
@@ -42,6 +48,7 @@ pub struct ParseTable {
 }
 
 impl ParseTable {
+    #[must_use]
     pub fn lookup(&self, state: StateId, symbol: SymbolId) -> &[ParseTableEntry] {
         let s = state.0 as usize;
         let sym = symbol.0 as usize;
@@ -49,15 +56,13 @@ impl ParseTable {
             let idx = s * self.symbol_count as usize + sym;
             self.large_entries
                 .get(idx)
-                .map(|a| a.entries.as_slice())
-                .unwrap_or(&[])
+                .map_or(&[], |a| a.entries.as_slice())
         } else {
             let small_idx = s - self.large_state_count as usize;
             self.small_states
                 .get(small_idx)
                 .and_then(|row| row.lookup(sym))
-                .map(|a| a.entries.as_slice())
-                .unwrap_or(&[])
+                .map_or(&[], |a| a.entries.as_slice())
         }
     }
 }
@@ -65,15 +70,32 @@ impl ParseTable {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SmallStateRow {
+    /// Entries sorted ascending by symbol id. The sort invariant is required
+    /// by `lookup`, which uses `binary_search_by_key`. Always construct via
+    /// `SmallStateRow::new` rather than building the `entries` field directly.
     pub entries: Vec<(u32, ParseTableAction)>,
 }
 
 impl SmallStateRow {
+    /// Build a `SmallStateRow` from an unsorted list of `(symbol_id, action)`
+    /// pairs. Duplicate symbol ids are not checked here — the grammar builder
+    /// is responsible for merging GLR conflicts into a single
+    /// `ParseTableAction::multiple` entry before calling this.
+    #[must_use]
+    pub fn new(mut entries: Vec<(u32, ParseTableAction)>) -> Self {
+        entries.sort_unstable_by_key(|&(s, _)| s);
+        Self { entries }
+    }
+
+    #[must_use]
     pub fn lookup(&self, symbol: usize) -> Option<&ParseTableAction> {
-        self.entries
-            .binary_search_by_key(&(symbol as u32), |&(s, _)| s)
-            .ok()
-            .map(|i| &self.entries[i].1)
+        let Ok(i) = self
+            .entries
+            .binary_search_by_key(&u32::try_from(symbol).unwrap_or(u32::MAX), |&(s, _)| s)
+        else {
+            return None;
+        };
+        Some(&self.entries[i].1)
     }
 }
 

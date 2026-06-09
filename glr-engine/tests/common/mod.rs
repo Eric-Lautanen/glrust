@@ -1,7 +1,7 @@
 use glr_core::parse_table::{ParseTable, ParseTableAction, ParseTableEntry};
 use glr_core::symbol::{Symbol, SymbolKind};
 use glr_core::{Grammar, ProductionId, StateId, SymbolId};
-use glr_lexer::{Lexer, Token};
+use glr_lexer::{LexError, Lexer, Token};
 use std::collections::{BTreeSet, HashMap};
 use std::vec::Vec;
 
@@ -284,6 +284,7 @@ pub struct TestLexer<'a> {
     source: &'a [u8],
     cursor: u32,
     token_map: Vec<(u32, &'a [u8])>,
+    last_error: LexError,
 }
 
 impl<'a> TestLexer<'a> {
@@ -292,6 +293,7 @@ impl<'a> TestLexer<'a> {
             source,
             cursor: 0,
             token_map,
+            last_error: LexError::Eof,
         }
     }
 }
@@ -300,6 +302,7 @@ impl<'a> Lexer for TestLexer<'a> {
     fn next_token(&mut self, _valid_symbols: &[bool]) -> Option<Token> {
         let len = self.source.len() as u32;
         if self.cursor >= len {
+            self.last_error = LexError::Eof;
             return None;
         }
         // Skip whitespace
@@ -307,6 +310,7 @@ impl<'a> Lexer for TestLexer<'a> {
             self.cursor += 1;
         }
         if self.cursor >= len {
+            self.last_error = LexError::Eof;
             return None;
         }
 
@@ -335,6 +339,10 @@ impl<'a> Lexer for TestLexer<'a> {
 
     fn cursor(&self) -> u32 {
         self.cursor
+    }
+
+    fn last_lex_error(&self) -> LexError {
+        self.last_error
     }
 
     fn reset_to(&mut self, byte_offset: u32) {
