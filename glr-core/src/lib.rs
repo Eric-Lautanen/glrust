@@ -11,7 +11,7 @@ pub mod tree;
 pub use grammar::Grammar;
 pub use parse_table::{ParseTable, ParseTableEntry, SmallStateRow};
 pub use symbol::{Symbol, SymbolKind};
-pub use tree::{InternalNode, MutableTree, Node, Tree, TreeCursor, NodeIter};
+pub use tree::{InternalNode, MutableTree, Node, Tree, TreeCursor};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StateId(pub u32);
