@@ -20,7 +20,7 @@ impl Parser {
         let _ = source;
         let start_state = StateId(0);
         let mut gss = Gss::new(start_state);
-        let mut tree = MutableTree::new();
+        let tree = MutableTree::new();
 
         loop {
             // Fetch the next token. valid_symbols is a placeholder — proper
@@ -33,7 +33,6 @@ impl Parser {
             };
 
             // Process the token against all active heads
-            let head_count = gss.head_count();
             let mut processed = false;
 
             // We need to clone the heads list because we'll modify gss in the loop
