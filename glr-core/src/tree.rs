@@ -14,7 +14,7 @@ impl Tree {
 
     pub fn walk(&self) -> TreeCursor<'_> {
         TreeCursor {
-            stack: self.root.as_ref().map(|n| NodeIter::new(n)).into_iter().collect(),
+            stack: self.root.as_ref().map(NodeIter::new).into_iter().collect(),
         }
     }
 }
@@ -107,6 +107,12 @@ pub struct MutableTree {
     next_node_id: u32,
 }
 
+impl Default for MutableTree {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MutableTree {
     pub fn new() -> Self {
         Self {
@@ -131,7 +137,10 @@ impl MutableTree {
             if let Some(child_node) = self.nodes.get_mut(child_id as usize) {
                 child_node.parent = Some(id);
             }
-            c = self.nodes.get(child_id as usize).and_then(|n| n.next_sibling);
+            c = self
+                .nodes
+                .get(child_id as usize)
+                .and_then(|n| n.next_sibling);
         }
 
         id
@@ -142,20 +151,18 @@ impl MutableTree {
         kind: SymbolId,
         start_byte: u32,
         end_byte: u32,
-        start_row: u32,
-        start_col: u32,
-        end_row: u32,
-        end_col: u32,
+        start_position: (u32, u32),
+        end_position: (u32, u32),
         is_named: bool,
     ) -> u32 {
         self.alloc(InternalNode {
             kind,
             start_byte,
             end_byte,
-            start_row,
-            start_col,
-            end_row,
-            end_col,
+            start_row: start_position.0,
+            start_col: start_position.1,
+            end_row: end_position.0,
+            end_col: end_position.1,
             child_count: 0,
             named_child_count: if is_named { 1 } else { 0 },
             first_child: None,

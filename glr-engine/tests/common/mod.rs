@@ -25,7 +25,8 @@ impl TestGrammarBuilder {
 
     pub fn nonterminal(&mut self, name: &str) -> u32 {
         let id = self.symbols.len() as u32;
-        self.symbols.push((name.to_string(), SymbolKind::NonTerminal));
+        self.symbols
+            .push((name.to_string(), SymbolKind::NonTerminal));
         id
     }
 

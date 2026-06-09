@@ -1,8 +1,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-#![allow(missing_docs)]
+//! Lexer trait and [`Token`] type consumed by the GLR parser engine.
 
 extern crate alloc;
 
 mod token;
 
-pub use token::{Token, Lexer};
+pub use token::{Lexer, Token};

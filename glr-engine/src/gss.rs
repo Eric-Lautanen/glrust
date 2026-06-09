@@ -1,6 +1,6 @@
-use glr_core::StateId;
 use alloc::vec::Vec;
 use core::fmt;
+use glr_core::StateId;
 
 /// A node in the Graph-Structured Stack (GSS).
 ///
@@ -10,7 +10,6 @@ use core::fmt;
 pub struct GssNode {
     pub state: StateId,
     pub position: u32,
-    pub edges: Vec<GssEdge>,
 }
 
 impl fmt::Debug for GssNode {
@@ -18,17 +17,8 @@ impl fmt::Debug for GssNode {
         f.debug_struct("GssNode")
             .field("state", &self.state)
             .field("position", &self.position)
-            .field("edges", &self.edges.len())
             .finish()
     }
-}
-
-/// An edge in the GSS, carrying the reduced subtree node index.
-#[derive(Debug, Clone)]
-pub struct GssEdge {
-    pub target: u32,
-    pub subtree: u32,
-    pub production_id: u16,
 }
 
 /// The Graph-Structured Stack.
@@ -46,7 +36,6 @@ impl Gss {
         let root = GssNode {
             state: initial_state,
             position: 0,
-            edges: Vec::new(),
         };
         Self {
             nodes: vec![root],
@@ -62,46 +51,21 @@ impl Gss {
     ///
     /// Returns the index of the node.
     pub fn add_node(&mut self, state: StateId, position: u32) -> u32 {
-        // Check all nodes (not just heads) for a merge candidate.
         for (i, n) in self.nodes.iter().enumerate() {
             if n.state == state && n.position == position {
                 let idx = i as u32;
-                // Register a new head at the existing node — this is the
-                // GLR merge: two parse paths now share this node.
                 self.heads.push(idx);
                 return idx;
             }
         }
-        // No existing node — create a new one.
         let id = self.nodes.len() as u32;
-        self.nodes.push(GssNode {
-            state,
-            position,
-            edges: Vec::new(),
-        });
+        self.nodes.push(GssNode { state, position });
         self.heads.push(id);
         id
-    }
-
-    /// Add an edge from `from` to `to`, labeled with a subtree and production.
-    pub fn add_edge(&mut self, from: u32, to: u32, subtree: u32, production_id: u16) {
-        self.nodes[from as usize]
-            .edges
-            .push(GssEdge { target: to, subtree, production_id });
-    }
-
-    /// Remove a head by index (swap-removes for O(1)).
-    pub fn remove_head(&mut self, index: usize) {
-        self.heads.swap_remove(index);
     }
 
     /// Return the number of active heads.
     pub fn head_count(&self) -> usize {
         self.heads.len()
-    }
-
-    /// Check if there are no active heads.
-    pub fn is_dead(&self) -> bool {
-        self.heads.is_empty()
     }
 }

@@ -1,5 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-#![allow(missing_docs)]
+//! Core data structures for GLR parsing: [`Grammar`], [`ParseTable`], [`Symbol`],
+//! [`Tree`], and newtype ids ([`StateId`], [`SymbolId`], [`ProductionId`]).
 
 #[cfg(feature = "serde")]
 extern crate serde;
@@ -16,22 +17,29 @@ pub use parse_table::{ParseTable, ParseTableEntry, SmallStateRow};
 pub use symbol::{Symbol, SymbolKind};
 pub use tree::{InternalNode, MutableTree, Node, Tree, TreeCursor};
 
+/// Newtype wrapper around a `u32` identifying an LR parser state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StateId(pub u32);
 
+/// Newtype wrapper around a `u32` identifying a grammar symbol (terminal or
+/// non-terminal).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SymbolId(pub u32);
 
 impl SymbolId {
+    /// Sentinel symbol id used for error-token nodes in the parse tree.
     pub const ERROR: Self = SymbolId(u32::MAX);
 }
 
+/// Newtype wrapper around a `u16` identifying a production rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProductionId(pub u16);
 
+/// Describes a single edit operation on source text, used for incremental
+/// re-parsing.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct InputEdit {
@@ -43,6 +51,7 @@ pub struct InputEdit {
     pub new_end_point: Point,
 }
 
+/// A row/column position in source text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Point {

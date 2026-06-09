@@ -50,9 +50,18 @@ impl SmallStateRow {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ParseTableEntry {
-    Shift { state: StateId },
-    Reduce { symbol: SymbolId, child_count: u16, dynamic_precedence: i32, production_id: u16 },
-    Goto { state: StateId },
+    Shift {
+        state: StateId,
+    },
+    Reduce {
+        symbol: SymbolId,
+        child_count: u16,
+        dynamic_precedence: i32,
+        production_id: u16,
+    },
+    Goto {
+        state: StateId,
+    },
     Accept,
     Error,
 }

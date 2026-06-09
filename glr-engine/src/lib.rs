@@ -1,5 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-#![allow(missing_docs)]
+//! RNGLR parser engine — Graph-Structured Stack (GSS) + shift/reduce driver.
 
 extern crate alloc;
 

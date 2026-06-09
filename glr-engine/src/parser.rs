@@ -1,9 +1,10 @@
-use crate::gss::Gss;
+use alloc::vec::Vec;
 use glr_core::parse_table::ParseTableEntry;
 use glr_core::tree::MutableTree;
 use glr_core::{Grammar, InputEdit, StateId, SymbolId, Tree};
 use glr_lexer::Lexer;
-use alloc::vec::Vec;
+
+use crate::gss::Gss;
 
 /// The GLR parser using the RNGLR algorithm.
 pub struct Parser {
@@ -43,7 +44,8 @@ impl Parser {
                             token.kind,
                             token.start_byte,
                             token.end_byte,
-                            0, 0, 0, 0,
+                            (0, 0),
+                            (0, 0),
                             false,
                         );
 
@@ -70,7 +72,8 @@ impl Parser {
                     SymbolId::ERROR,
                     error_pos,
                     token.start_byte,
-                    0, 0, 0, 0,
+                    (0, 0),
+                    (0, 0),
                     true,
                 );
 

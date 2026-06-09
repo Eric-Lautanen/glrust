@@ -49,9 +49,15 @@ fn dangling_else() {
     let parser = Parser::new(grammar);
     let src = b"if a then if b then c else d";
     let token_map: Vec<(u32, &[u8])> = vec![
-        (if_t, b"if"), (e_t, b"a"), (then_t, b"then"),
-        (if_t, b"if"), (e_t, b"b"), (then_t, b"then"),
-        (e_t, b"c"), (else_t, b"else"), (e_t, b"d"),
+        (if_t, b"if"),
+        (e_t, b"a"),
+        (then_t, b"then"),
+        (if_t, b"if"),
+        (e_t, b"b"),
+        (then_t, b"then"),
+        (e_t, b"c"),
+        (else_t, b"else"),
+        (e_t, b"d"),
     ];
     let mut lexer = TestLexer::new(src, token_map);
     let _tree = parser.parse_with_lexer(src, &mut lexer);

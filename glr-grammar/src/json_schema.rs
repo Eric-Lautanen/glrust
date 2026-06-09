@@ -51,7 +51,9 @@ impl<'de> Visitor<'de> for GrammarJsonVisitor {
                 "inline" => inline = Some(map.next_value()?),
                 "supertypes" => supertypes = Some(map.next_value()?),
                 "word" => word = Some(map.next_value()?),
-                _ => { let _: Value = map.next_value()?; }
+                _ => {
+                    let _: Value = map.next_value()?;
+                }
             }
         }
 
@@ -102,9 +104,16 @@ pub enum Rule {
     /// Right-associative precedence: `{"type": "PREC_RIGHT", "value": N, "content": ...}`
     PrecRight { value: i32, content: Box<Rule> },
     /// Dynamic precedence: `{"type": "PREC_DYNAMIC", "value": ..., "content": ...}`
-    PrecDynamic { value: Box<Rule>, content: Box<Rule> },
+    PrecDynamic {
+        value: Box<Rule>,
+        content: Box<Rule>,
+    },
     /// Alias: `{"type": "ALIAS", "value": ..., "named": bool, "content": ...}`
-    Alias { value: Box<Rule>, named: bool, content: Box<Rule> },
+    Alias {
+        value: Box<Rule>,
+        named: bool,
+        content: Box<Rule>,
+    },
     /// Token (lexical rule): `{"type": "TOKEN", "content": ...}`
     Token { content: Box<Rule> },
     /// Immediate token: `{"type": "IMMEDIATE_TOKEN", "content": ...}`
@@ -115,7 +124,10 @@ pub enum Rule {
 
 impl Rule {
     pub fn is_named(&self) -> bool {
-        matches!(self, Rule::Symbol(_) | Rule::Choice { .. } | Rule::Seq { .. })
+        matches!(
+            self,
+            Rule::Symbol(_) | Rule::Choice { .. } | Rule::Seq { .. }
+        )
     }
 }
 
@@ -172,9 +184,8 @@ impl<'de> Deserialize<'de> for Rule {
                         "members" => members = Some(map.next_value()?),
                         "content" => {
                             let v: Value = map.next_value()?;
-                            content = Some(Box::new(
-                                Rule::deserialize(v).map_err(de::Error::custom)?,
-                            ));
+                            content =
+                                Some(Box::new(Rule::deserialize(v).map_err(de::Error::custom)?));
                         }
                         "named" => named = Some(map.next_value()?),
                         other => {
@@ -191,69 +202,56 @@ impl<'de> Deserialize<'de> for Rule {
                         name.ok_or_else(|| de::Error::missing_field("name"))?,
                     )),
                     "STRING" => Ok(Rule::String {
-                        value: str_value.clone()
+                        value: str_value
+                            .clone()
                             .ok_or_else(|| de::Error::missing_field("value"))?,
                     }),
                     "PATTERN" => Ok(Rule::Pattern {
-                        value: str_value.clone()
+                        value: str_value
+                            .clone()
                             .ok_or_else(|| de::Error::missing_field("value"))?,
                     }),
                     "SEQ" => Ok(Rule::Seq {
-                        members: members
-                            .ok_or_else(|| de::Error::missing_field("members"))?,
+                        members: members.ok_or_else(|| de::Error::missing_field("members"))?,
                     }),
                     "CHOICE" => Ok(Rule::Choice {
-                        members: members
-                            .ok_or_else(|| de::Error::missing_field("members"))?,
+                        members: members.ok_or_else(|| de::Error::missing_field("members"))?,
                     }),
                     "REPEAT" => Ok(Rule::Repeat {
-                        content: content
-                            .ok_or_else(|| de::Error::missing_field("content"))?,
+                        content: content.ok_or_else(|| de::Error::missing_field("content"))?,
                     }),
                     "FIELD" => Ok(Rule::Field {
                         name: name.ok_or_else(|| de::Error::missing_field("name"))?,
-                        content: content
-                            .ok_or_else(|| de::Error::missing_field("content"))?,
+                        content: content.ok_or_else(|| de::Error::missing_field("content"))?,
                     }),
                     "PREC" => Ok(Rule::Prec {
-                        value: int_value
-                            .ok_or_else(|| de::Error::missing_field("value"))?,
-                        content: content
-                            .ok_or_else(|| de::Error::missing_field("content"))?,
+                        value: int_value.ok_or_else(|| de::Error::missing_field("value"))?,
+                        content: content.ok_or_else(|| de::Error::missing_field("content"))?,
                     }),
                     "PREC_LEFT" => Ok(Rule::PrecLeft {
-                        value: int_value
-                            .ok_or_else(|| de::Error::missing_field("value"))?,
-                        content: content
-                            .ok_or_else(|| de::Error::missing_field("content"))?,
+                        value: int_value.ok_or_else(|| de::Error::missing_field("value"))?,
+                        content: content.ok_or_else(|| de::Error::missing_field("content"))?,
                     }),
                     "PREC_RIGHT" => Ok(Rule::PrecRight {
-                        value: int_value
-                            .ok_or_else(|| de::Error::missing_field("value"))?,
-                        content: content
-                            .ok_or_else(|| de::Error::missing_field("content"))?,
+                        value: int_value.ok_or_else(|| de::Error::missing_field("value"))?,
+                        content: content.ok_or_else(|| de::Error::missing_field("content"))?,
                     }),
                     "PREC_DYNAMIC" => Ok(Rule::PrecDynamic {
                         value: rule_value
                             .ok_or_else(|| de::Error::custom("missing 'value' in PREC_DYNAMIC"))?,
-                        content: content
-                            .ok_or_else(|| de::Error::missing_field("content"))?,
+                        content: content.ok_or_else(|| de::Error::missing_field("content"))?,
                     }),
                     "ALIAS" => Ok(Rule::Alias {
                         value: rule_value
                             .ok_or_else(|| de::Error::custom("missing 'value' in ALIAS"))?,
-                        named: named
-                            .ok_or_else(|| de::Error::missing_field("named"))?,
-                        content: content
-                            .ok_or_else(|| de::Error::missing_field("content"))?,
+                        named: named.ok_or_else(|| de::Error::missing_field("named"))?,
+                        content: content.ok_or_else(|| de::Error::missing_field("content"))?,
                     }),
                     "TOKEN" => Ok(Rule::Token {
-                        content: content
-                            .ok_or_else(|| de::Error::missing_field("content"))?,
+                        content: content.ok_or_else(|| de::Error::missing_field("content"))?,
                     }),
                     "IMMEDIATE_TOKEN" => Ok(Rule::ImmediateToken {
-                        content: content
-                            .ok_or_else(|| de::Error::missing_field("content"))?,
+                        content: content.ok_or_else(|| de::Error::missing_field("content"))?,
                     }),
                     _ => {
                         let mut obj = serde_json::Map::new();
