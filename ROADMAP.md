@@ -13,6 +13,8 @@ detailed roadmap document with all phases, crate design, and validation strategy
 
 ### Phase 0 — Foundation 🏗️ (scaffolded, not functionally complete)
 
+Clean build: `cargo clippy` → 0 warnings, `cargo fmt --check` → 0 diffs, zero `#[allow]` blocks. (Jun 2026)
+
 | Section | Status | Details |
 |---------|--------|---------|
 | 0.2 Core data structures | ✅ | `glr-core`: Grammar, ParseTable (flat Vec + large/small states), Symbol, StateId, ProductionId — all `#[no_std]` + serde |
