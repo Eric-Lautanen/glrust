@@ -11,17 +11,17 @@ detailed roadmap document with all phases, crate design, and validation strategy
 
 ## Completion status
 
-### Phase 0 — Foundation 🏗️ (scaffolded, not functionally complete)
+### Phase 0 — Foundation ✅
 
 Clean build: `cargo clippy` → 0 warnings, `cargo fmt --check` → 0 diffs, zero `#[allow]` blocks. (Jun 2026)
 
 | Section | Status | Details |
 |---------|--------|---------|
 | 0.2 Core data structures | ✅ | `glr-core`: Grammar, ParseTable (flat Vec + large/small states), Symbol, StateId, ProductionId — all `#[no_std]` + serde |
-| 0.3 GLR engine | 🏗️ | GSS with node sharing by `(state, position)`, but **reduce loop not wired** — no GSS edges created, no reductions performed, no GOTO lookup, no ε-rule fixed-point. Parser struct and shift handler are scaffolded. |
-| 0.3.1 Tests | 🏗️ | 6 integration tests with TestGrammarBuilder + TestLexer. **All tests are `#[ignore]`d** because the engine cannot parse anything. |
-| 0.4 Tree construction | ✅ | MutableTree (arena) → Tree (immutable), TreeCursor with DFS walk, named children. |
-| 0.5 Error recovery | 🏗️ | `SymbolId::ERROR` sentinel and token-skip resync loop are present, but **untestable until engine reduce loop is wired**. Error recovery test is `#[ignore]`d. |
+| 0.3 GLR engine | ✅ | RNGLR algorithm with GSS node sharing by `(state, position)`, GSS edges for reduce traversal, GOTO lookup, ε-rule fixed-point (RNGLR), cascading reductions via work-list with GOTO-merge cycle prevention. |
+| 0.3.1 Tests | ✅ | 7 integration tests with LR(0) table generation via `TestGrammarBuilder`. All tests pass: arithmetic, dangling-else, ε-rule, long-chain, ambiguity, error-recovery, conflicted production. |
+| 0.4 Tree construction | ✅ | MutableTree (arena) → Tree (immutable), TreeCursor with DFS walk (path-index based), named children, `node_at_byte`. |
+| 0.5 Error recovery | ✅ | `SymbolId::ERROR` sentinel, token-skip resync loop, returns a Tree on malformed input. |
 
 ### Phase 1 — Lexer ⏳ (next)
 

@@ -1,8 +1,13 @@
-use glr_core::parse_table::{ParseTable, ParseTableEntry};
+use glr_core::parse_table::{ParseTable, ParseTableAction, ParseTableEntry};
 use glr_core::symbol::{Symbol, SymbolKind};
 use glr_core::{Grammar, ProductionId, StateId, SymbolId};
 use glr_lexer::{Lexer, Token};
+use std::collections::{BTreeSet, HashMap};
 use std::vec::Vec;
+
+// ---------------------------------------------------------------------------
+// TestGrammarBuilder – builds a correct LR(0) parse table
+// ---------------------------------------------------------------------------
 
 pub struct TestGrammarBuilder {
     symbols: Vec<(String, SymbolKind)>,
@@ -36,6 +41,13 @@ impl TestGrammarBuilder {
 
     pub fn build(&self) -> Grammar {
         let symbol_count = self.symbols.len() as u32;
+        let terminal_count = self
+            .symbols
+            .iter()
+            .filter(|(_, k)| *k == SymbolKind::Terminal)
+            .count() as u32;
+
+        // Build the Symbol list
         let syms: Vec<Symbol> = self
             .symbols
             .iter()
@@ -47,12 +59,185 @@ impl TestGrammarBuilder {
             })
             .collect();
 
-        let token_count = self
+        // Determine start symbol: the LHS of the first production
+        let start_sym = self.productions.first().map(|(nt, _, _)| *nt);
+
+        // Gather terminals and nonterminals
+        let terminals: Vec<u32> = self
             .symbols
             .iter()
-            .filter(|(_, k)| matches!(k, SymbolKind::Terminal))
-            .count() as u32;
+            .enumerate()
+            .filter(|(_, (_, k))| *k == SymbolKind::Terminal)
+            .map(|(i, _)| i as u32)
+            .collect();
+        // Build augmented production: S' → start_symbol
+        // Production 0 is the augmented start production.
+        let augmented_prod_id: usize = 0;
+        let mut all_productions: Vec<(u32, Vec<u32>, i32)> = Vec::new();
+        // Augmented: S' → start_sym
+        if let Some(start) = start_sym {
+            all_productions.push((start, vec![start], 0));
+        }
+        all_productions.extend(self.productions.clone());
 
+        // LR(0) item = (production_index_in_all, dot_position)
+        type Item = (usize, usize);
+
+        // Compute CLOSURE of a set of items
+        let closure = |items: &BTreeSet<Item>| -> BTreeSet<Item> {
+            let mut set = items.clone();
+            let mut changed = true;
+            while changed {
+                changed = false;
+                let snapshot: Vec<Item> = set.iter().copied().collect();
+                for &(pid, dot) in &snapshot {
+                    let rhs_len = all_productions[pid].1.len();
+                    if dot < rhs_len {
+                        let sym = all_productions[pid].1[dot];
+                        // If sym is a nonterminal, add all its productions at dot 0
+                        if self
+                            .symbols
+                            .get(sym as usize)
+                            .map(|(_, k)| *k == SymbolKind::NonTerminal)
+                            .unwrap_or(false)
+                        {
+                            for (qid, (nt, _, _)) in all_productions.iter().enumerate() {
+                                if *nt == sym && !set.contains(&(qid, 0)) {
+                                    set.insert((qid, 0));
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            set
+        };
+
+        // Compute GOTO(state, symbol)
+        let goto = |items: &BTreeSet<Item>, sym: u32| -> BTreeSet<Item> {
+            let mut next: BTreeSet<Item> = BTreeSet::new();
+            for &(pid, dot) in items {
+                let rhs_len = all_productions[pid].1.len();
+                if dot < rhs_len && all_productions[pid].1[dot] == sym {
+                    next.insert((pid, dot + 1));
+                }
+            }
+            closure(&next)
+        };
+
+        // Build all LR(0) states
+        let initial = start_sym.map_or(BTreeSet::new(), |_start| {
+            closure(&BTreeSet::from([(augmented_prod_id, 0)]))
+        });
+
+        let mut states: Vec<BTreeSet<Item>> = Vec::new();
+        let mut state_map: HashMap<BTreeSet<Item>, usize> = HashMap::new();
+
+        if !initial.is_empty() {
+            state_map.insert(initial.clone(), 0);
+            states.push(initial);
+        }
+
+        let mut i = 0;
+        while i < states.len() {
+            for sym in 0..symbol_count {
+                let next = goto(&states[i], sym);
+                if next.is_empty() {
+                    continue;
+                }
+                if !state_map.contains_key(&next) {
+                    let idx = states.len();
+                    state_map.insert(next.clone(), idx);
+                    states.push(next);
+                }
+            }
+            i += 1;
+        }
+
+        let state_count = states.len() as u32;
+
+        // Generate parse table entries
+        // Each cell can have multiple actions (for GLR conflicts)
+        let mut large_entries: Vec<ParseTableAction> = Vec::new();
+        large_entries.resize(
+            (state_count as usize) * (symbol_count as usize),
+            ParseTableAction::single(ParseTableEntry::Error),
+        );
+
+        // Helper to add an action to a cell
+        let add_action =
+            |entries: &mut Vec<ParseTableAction>, s: usize, sym: u32, action: ParseTableEntry| {
+                let idx = s * symbol_count as usize + sym as usize;
+                let cell = &mut entries[idx];
+                if cell.is_error() {
+                    cell.entries.clear();
+                }
+                cell.entries.push(action);
+            };
+
+        for (si, state) in states.iter().enumerate() {
+            for &(pid, dot) in state {
+                let rhs_len = all_productions[pid].1.len();
+                let lhs = all_productions[pid].0;
+
+                if dot < rhs_len {
+                    // Shift on rhs[dot]
+                    let sym = all_productions[pid].1[dot];
+                    let target_set = goto(state, sym);
+                    if let Some(&target_si) = state_map.get(&target_set) {
+                        let is_terminal = self
+                            .symbols
+                            .get(sym as usize)
+                            .map(|(_, k)| *k == SymbolKind::Terminal)
+                            .unwrap_or(false);
+                        if is_terminal {
+                            add_action(
+                                &mut large_entries,
+                                si,
+                                sym,
+                                ParseTableEntry::Shift {
+                                    state: StateId(target_si as u32),
+                                },
+                            );
+                        } else {
+                            add_action(
+                                &mut large_entries,
+                                si,
+                                sym,
+                                ParseTableEntry::Goto {
+                                    state: StateId(target_si as u32),
+                                },
+                            );
+                        }
+                    }
+                }
+
+                if dot == rhs_len {
+                    // Reduce LR(0): reduce on ALL terminals
+                    if pid == augmented_prod_id {
+                        // S' → S · — accept
+                        for &t in &terminals {
+                            add_action(&mut large_entries, si, t, ParseTableEntry::Accept);
+                        }
+                    } else {
+                        let orig_prod = pid - 1;
+                        let child_count = rhs_len as u16;
+                        let reduce_action = ParseTableEntry::Reduce {
+                            symbol: SymbolId(lhs),
+                            child_count,
+                            dynamic_precedence: 0,
+                            production_id: orig_prod as u16,
+                        };
+                        for &t in &terminals {
+                            add_action(&mut large_entries, si, t, reduce_action);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Build productions list (without the augmented start)
         let productions: Vec<_> = self
             .productions
             .iter()
@@ -64,41 +249,6 @@ impl TestGrammarBuilder {
                 dynamic_precedence: *prec,
             })
             .collect();
-
-        let mut state_count = 1u32;
-        let mut large_entries = Vec::new();
-
-        for (prod_idx, (nt, rhs, _)) in self.productions.iter().enumerate() {
-            for (pos, &sym) in rhs.iter().enumerate() {
-                let is_last = pos + 1 == rhs.len();
-                let state = state_count;
-                state_count += 1;
-
-                for s in 0..symbol_count {
-                    let entry = if s == sym as u32 {
-                        if is_last {
-                            ParseTableEntry::Reduce {
-                                symbol: SymbolId(s),
-                                child_count: rhs.len() as u16,
-                                dynamic_precedence: 0,
-                                production_id: prod_idx as u16,
-                            }
-                        } else {
-                            ParseTableEntry::Shift {
-                                state: StateId(state),
-                            }
-                        }
-                    } else if s == *nt && is_last {
-                        ParseTableEntry::Goto {
-                            state: StateId(state),
-                        }
-                    } else {
-                        ParseTableEntry::Error
-                    };
-                    large_entries.push(entry);
-                }
-            }
-        }
 
         let table = ParseTable {
             symbol_count,
@@ -112,7 +262,7 @@ impl TestGrammarBuilder {
             version: 14,
             symbol_count,
             alias_count: 0,
-            token_count,
+            token_count: terminal_count,
             external_token_count: 0,
             state_count,
             large_state_count: state_count,
@@ -125,6 +275,10 @@ impl TestGrammarBuilder {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// TestLexer – tokenizes based on a static map
+// ---------------------------------------------------------------------------
 
 pub struct TestLexer<'a> {
     source: &'a [u8],
@@ -148,6 +302,7 @@ impl<'a> Lexer for TestLexer<'a> {
         if self.cursor >= len {
             return None;
         }
+        // Skip whitespace
         while self.cursor < len && self.source[self.cursor as usize].is_ascii_whitespace() {
             self.cursor += 1;
         }
@@ -168,6 +323,7 @@ impl<'a> Lexer for TestLexer<'a> {
             }
         }
 
+        // Fallback: emit one byte as unknown token
         let start = self.cursor;
         self.cursor += 1;
         Some(Token {

@@ -13,7 +13,7 @@ pub mod symbol;
 pub mod tree;
 
 pub use grammar::{Grammar, Production};
-pub use parse_table::{ParseTable, ParseTableEntry, SmallStateRow};
+pub use parse_table::{ParseTable, ParseTableAction, ParseTableEntry, SmallStateRow};
 pub use symbol::{Symbol, SymbolKind};
 pub use tree::{InternalNode, MutableTree, Node, Tree, TreeCursor};
 

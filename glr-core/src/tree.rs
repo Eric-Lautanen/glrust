@@ -12,10 +12,17 @@ impl Tree {
         self.root.as_ref()
     }
 
+    /// Return a cursor rooted at the tree's root (or no-op if empty).
     pub fn walk(&self) -> TreeCursor<'_> {
         TreeCursor {
-            stack: self.root.as_ref().map(NodeIter::new).into_iter().collect(),
+            tree: self,
+            path: Vec::new(),
         }
+    }
+
+    /// Find the deepest node that contains byte offset.
+    pub fn node_at_byte(&self, offset: u32) -> Option<&Node> {
+        self.root.as_ref().and_then(|n| n.node_at_byte(offset))
     }
 }
 
@@ -38,68 +45,78 @@ impl Node {
     pub fn named_children(&self) -> impl Iterator<Item = &Node> {
         self.children.iter().filter(|c| c.is_named)
     }
+
+    /// Look up a child node by field name (Phase 2 adds field support).
+    pub fn child_by_field_name(&self, _name: &str) -> Option<&Node> {
+        None
+    }
+
+    /// Recursively find the deepest descendant containing `offset`.
+    pub fn node_at_byte(&self, offset: u32) -> Option<&Node> {
+        if offset < self.start_byte || offset >= self.end_byte {
+            return None;
+        }
+        for child in &self.children {
+            if let Some(found) = child.node_at_byte(offset) {
+                return Some(found);
+            }
+        }
+        Some(self)
+    }
 }
 
+/// A cursor for walking a `Tree` in DFS order, using a path of child indices.
 pub struct TreeCursor<'a> {
-    stack: Vec<NodeIter<'a>>,
+    tree: &'a Tree,
+    path: Vec<usize>,
 }
 
 impl<'a> TreeCursor<'a> {
+    /// Resolve the current node from the path.
     pub fn node(&self) -> Option<&'a Node> {
-        self.stack.last().and_then(|iter| iter.current())
+        let mut node = self.tree.root.as_ref()?;
+        for &idx in &self.path {
+            node = node.children.get(idx)?;
+        }
+        Some(node)
     }
 
+    /// Move to the first child of the current node.
     pub fn goto_first_child(&mut self) -> bool {
-        match self.node() {
-            Some(current) if !current.children.is_empty() => {
-                self.stack.push(NodeIter::new(&current.children[0]));
-                true
-            }
-            _ => false,
-        }
-    }
-
-    pub fn goto_next_sibling(&mut self) -> bool {
-        match self.stack.last_mut() {
-            Some(iter) => {
-                iter.advance();
-                iter.current().is_some()
-            }
-            None => false,
-        }
-    }
-
-    pub fn goto_parent(&mut self) -> bool {
-        if self.stack.len() <= 1 {
+        let node = match self.node() {
+            Some(n) => n,
+            None => return false,
+        };
+        if node.children.is_empty() {
             return false;
         }
-        self.stack.pop();
+        self.path.push(0);
+        true
+    }
+
+    /// Move to the next sibling of the current node.
+    pub fn goto_next_sibling(&mut self) -> bool {
+        if self.path.is_empty() {
+            return false;
+        }
+        let len = self.path.len();
+        self.path[len - 1] += 1;
+        self.node().is_some()
+    }
+
+    /// Move to the parent of the current node.
+    pub fn goto_parent(&mut self) -> bool {
+        if self.path.is_empty() {
+            return false;
+        }
+        self.path.pop();
         true
     }
 }
 
-struct NodeIter<'a> {
-    node: &'a Node,
-    index: usize,
-}
-
-impl<'a> NodeIter<'a> {
-    fn new(node: &'a Node) -> Self {
-        Self { node, index: 0 }
-    }
-
-    fn current(&self) -> Option<&'a Node> {
-        if self.index < self.node.children.len() {
-            Some(&self.node.children[self.index])
-        } else {
-            None
-        }
-    }
-
-    fn advance(&mut self) {
-        self.index += 1;
-    }
-}
+// ---------------------------------------------------------------------------
+// MutableTree – arena-backed construction used during parsing
+// ---------------------------------------------------------------------------
 
 #[derive(Debug)]
 pub struct MutableTree {
@@ -121,6 +138,8 @@ impl MutableTree {
         }
     }
 
+    /// Allocate an already-configured InternalNode. Sets up parent back-pointers
+    /// for its children.
     pub fn alloc(&mut self, mut node: InternalNode) -> u32 {
         let id = self.next_node_id;
         self.next_node_id += 1;
@@ -146,6 +165,7 @@ impl MutableTree {
         id
     }
 
+    /// Allocate a leaf (token) node.
     pub fn alloc_token(
         &mut self,
         kind: SymbolId,
@@ -176,6 +196,65 @@ impl MutableTree {
         })
     }
 
+    /// Allocate an internal (nonterminal) node with given child indices.
+    /// Links children into a sibling list and sets parent back-pointers.
+    #[allow(clippy::too_many_arguments)]
+    pub fn alloc_internal(
+        &mut self,
+        kind: SymbolId,
+        children: &[u32],
+        start_byte: u32,
+        end_byte: u32,
+        start_position: (u32, u32),
+        end_position: (u32, u32),
+        is_named: bool,
+    ) -> u32 {
+        let id = self.next_node_id;
+        self.next_node_id += 1;
+
+        let first_child = children.first().copied();
+        for (i, &child_id) in children.iter().enumerate() {
+            if let Some(child) = self.nodes.get_mut(child_id as usize) {
+                child.parent = Some(id);
+                child.next_sibling = children.get(i + 1).copied();
+            }
+        }
+
+        let child_count = children.len() as u32;
+        let named_child_count = children
+            .iter()
+            .filter(|&&cid| {
+                self.nodes
+                    .get(cid as usize)
+                    .map(|n| n.is_named)
+                    .unwrap_or(false)
+            })
+            .count() as u32;
+
+        self.nodes.push(InternalNode {
+            kind,
+            start_byte,
+            end_byte,
+            start_row: start_position.0,
+            start_col: start_position.1,
+            end_row: end_position.0,
+            end_col: end_position.1,
+            child_count,
+            named_child_count,
+            first_child,
+            next_sibling: None,
+            parent: None,
+            field_id: None,
+            is_named,
+            is_missing: false,
+            is_extra: false,
+            has_changes: false,
+        });
+
+        id
+    }
+
+    /// Freeze the mutable tree into an immutable `Tree`.
     pub fn freeze(&self) -> Tree {
         if self.nodes.is_empty() {
             return Tree { root: None };
