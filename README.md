@@ -1,5 +1,11 @@
 # glrust — Pure Rust GLR Parser
 
+> **Status: On Hold** — This project has been started with a solid foundation
+> (core data structures, RNGLR engine, DFA lexer, query compiler, grammar
+> compiler from JSON, conformance/bench/fuzz scaffolding) and is slated for
+> future completion. Active development is paused for now. See
+> [ROADMAP.md](ROADMAP.md) for the full plan and what each phase covers.
+
 A purely idiomatic Rust GLR parser ecosystem — no `cc`, no `build.rs` C
 compilation, no `extern "C"` FFI. Independently useful as composable crates
 while being capable of consuming tree-sitter grammar JSON files and matching
@@ -7,8 +13,8 @@ tree-sitter's output for compatibility with the existing 200+ grammar ecosystem.
 
 ## Project status
 
-This project is in **early development**. See [ROADMAP.md](ROADMAP.md) for the
-full plan and current phase.
+This project is in **early development** and currently on hold.
+See [ROADMAP.md](ROADMAP.md) for the full plan and current phase.
 
 ## Why?
 

@@ -1,12 +1,38 @@
-use crate::SymbolId;
+use crate::{StateId, SymbolId};
+use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Bitmask of boolean flags on tree nodes.
-///
-/// Avoids clippy's `struct_excessive_bools` without changing the public API:
-/// the accessor methods mirror the old field names so callers can migrate
-/// with a mechanical `node.is_named` → `node.flags.is_named()` change.
+#[cfg(feature = "rc")]
+use alloc::rc::Rc;
+#[cfg(not(feature = "rc"))]
+use alloc::sync::Arc;
+
+#[cfg(not(feature = "rc"))]
+type TreeRef = Arc<TreeInner>;
+#[cfg(feature = "rc")]
+type TreeRef = Rc<TreeInner>;
+
+#[cfg(not(feature = "rc"))]
+fn make_mut(this: &mut TreeRef) -> &mut TreeInner {
+    Arc::make_mut(this)
+}
+#[cfg(feature = "rc")]
+fn make_mut(this: &mut TreeRef) -> &mut TreeInner {
+    Rc::make_mut(this)
+}
+
+/// Byte range and row/column position of a parsed node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextSpan {
+    pub start_byte: u32,
+    pub end_byte: u32,
+    pub start_position: (u32, u32),
+    pub end_position: (u32, u32),
+}
+
+/// Bitmask of boolean flags on tree nodes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct NodeFlags(u8);
 
 impl NodeFlags {
@@ -63,23 +89,103 @@ impl Default for NodeFlags {
     }
 }
 
+/// Index into a [`Tree`] node arena.
+pub type NodeId = usize;
+
+/// An immutable tree backed by a compact arena of [`Node`]s, wrapped in
+/// [`Arc`] (or `Rc` behind the `rc` feature) for cheap clone / shared
+/// ownership.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Tree {
-    pub root: Option<Node>,
+    inner: TreeRef,
+}
+
+#[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+struct TreeInner {
+    nodes: Vec<Node>,
+    root: Option<NodeId>,
+    symbol_names: Vec<String>,
+    field_names: Vec<String>,
+}
+
+impl Clone for TreeInner {
+    fn clone(&self) -> Self {
+        Self {
+            nodes: self.nodes.clone(),
+            root: self.root,
+            symbol_names: self.symbol_names.clone(),
+            field_names: self.field_names.clone(),
+        }
+    }
 }
 
 impl Tree {
+    /// Build a tree from a pre-built arena.
+    #[must_use]
+    pub fn from_arena(nodes: Vec<Node>, root: Option<NodeId>) -> Self {
+        Self {
+            inner: TreeRef::new(TreeInner {
+                nodes,
+                root,
+                symbol_names: Vec::new(),
+                field_names: Vec::new(),
+            }),
+        }
+    }
+
+    /// Attach symbol name lookup information (from a `Grammar`).
+    #[must_use]
+    pub fn with_symbol_names(mut self, names: Vec<String>) -> Self {
+        let inner = make_mut(&mut self.inner);
+        inner.symbol_names = names;
+        self
+    }
+
+    /// Attach field name lookup information (from a `Grammar`).
+    #[must_use]
+    pub fn with_field_names(mut self, names: Vec<String>) -> Self {
+        let inner = make_mut(&mut self.inner);
+        inner.field_names = names;
+        self
+    }
+
+    /// Resolve a symbol id to its string name.
+    #[must_use]
+    pub fn symbol_name(&self, id: SymbolId) -> &str {
+        self.inner
+            .symbol_names
+            .get(id.0 as usize)
+            .map_or("<unknown>", |s| s.as_str())
+    }
+
+    /// Resolve a field id to its string name.
+    #[must_use]
+    pub fn field_name(&self, field_id: u16) -> &str {
+        self.inner
+            .field_names
+            .get(field_id as usize)
+            .map_or("<unknown>", |s| s.as_str())
+    }
+
+    /// Return the field names slice.
+    #[must_use]
+    pub fn field_names(&self) -> &[String] {
+        &self.inner.field_names
+    }
+
+    /// The root node, if the tree is non-empty.
     #[must_use]
     pub fn root_node(&self) -> Option<&Node> {
-        self.root.as_ref()
+        self.inner.root.map(|idx| &self.inner.nodes[idx])
     }
 
     /// Return a cursor rooted at the tree's root (or no-op if empty).
     #[must_use]
     pub fn walk(&self) -> TreeCursor<'_> {
         TreeCursor {
-            tree: self,
+            nodes: &self.inner.nodes,
+            root: self.inner.root,
             path: Vec::new(),
         }
     }
@@ -87,10 +193,68 @@ impl Tree {
     /// Find the deepest node that contains byte offset.
     #[must_use]
     pub fn node_at_byte(&self, offset: u32) -> Option<&Node> {
-        self.root.as_ref().and_then(|n| n.node_at_byte(offset))
+        let idx = self.inner.root?;
+        self.inner.nodes[idx].node_at_byte(offset, &self.inner.nodes)
+    }
+
+    /// Mark all nodes whose byte range overlaps `[start, end)` as changed.
+    /// Since the tree is immutable (behind `Arc`/`Rc`), this requires making
+    /// a unique (mutable) clone of the inner data.
+    pub fn mark_edit_range(&mut self, start: u32, end: u32) {
+        let inner = make_mut(&mut self.inner);
+        if let Some(root) = &mut inner.root {
+            mark_range_inner(&mut inner.nodes, *root, start, end);
+        }
+    }
+
+    /// Access the underlying node arena (for query / traversal utilities).
+    #[must_use]
+    pub fn nodes(&self) -> &[Node] {
+        &self.inner.nodes
+    }
+
+    /// Return the index of the root node, if any.
+    #[must_use]
+    pub fn root_id(&self) -> Option<NodeId> {
+        self.inner.root
+    }
+
+    /// Look up a node by its arena index.
+    #[must_use]
+    pub fn node_by_id(&self, id: NodeId) -> Option<&Node> {
+        self.inner.nodes.get(id)
     }
 }
 
+fn mark_range_inner(nodes: &mut [Node], root_idx: NodeId, start: u32, end: u32) {
+    let mut changed = alloc::vec![false; nodes.len()];
+    let mut stack: Vec<(NodeId, bool)> = Vec::new();
+    stack.push((root_idx, false));
+
+    while let Some((idx, processed)) = stack.pop() {
+        if nodes[idx].end_byte <= start || nodes[idx].start_byte >= end {
+            continue;
+        }
+        if processed {
+            let overlaps = nodes[idx].start_byte < end && nodes[idx].end_byte > start;
+            let any_child = nodes[idx]
+                .children
+                .iter()
+                .any(|&cid| changed.get(cid).copied().unwrap_or(false));
+            if overlaps || any_child {
+                changed[idx] = true;
+                nodes[idx].flags.set_changes(true);
+            }
+        } else {
+            stack.push((idx, true));
+            for &cid in nodes[idx].children.iter().rev() {
+                stack.push((cid, false));
+            }
+        }
+    }
+}
+
+/// A node in the parse tree, stored inside a [`Tree`] arena.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Node {
@@ -99,39 +263,52 @@ pub struct Node {
     pub end_byte: u32,
     pub start_position: (u32, u32),
     pub end_position: (u32, u32),
-    pub children: Vec<Node>,
+    /// Indices into the owning [`Tree`]'s node arena.
+    pub children: Vec<NodeId>,
     pub flags: NodeFlags,
+    /// LR parser state at this node boundary, used for incremental re-parse
+    /// subtree reuse. `None` for leaf / token nodes.
+    pub parser_state: Option<StateId>,
+    /// Field name id of this node relative to its parent.
+    pub field_id: Option<u16>,
 }
 
 impl Node {
-    pub fn named_children(&self) -> impl Iterator<Item = &Node> {
-        self.children.iter().filter(|c| c.flags.is_named())
-    }
-
-    /// Look up a child node by field name (Phase 2 adds field support).
-    #[must_use]
-    pub fn child_by_field_name(&self, _name: &str) -> Option<&Node> {
-        None
+    /// Iterate over named children by resolving child indices against the
+    /// owning tree's node arena.
+    pub fn named_children<'a>(
+        &'a self,
+        nodes: &'a [Node],
+    ) -> impl Iterator<Item = &'a Node> + use<'a> {
+        self.children
+            .iter()
+            .filter_map(move |&idx| nodes.get(idx))
+            .filter(|c| c.flags.is_named())
     }
 
     /// Recursively find the deepest descendant containing `offset`.
+    /// `nodes` must be the arena of the tree that owns this node.
     #[must_use]
-    pub fn node_at_byte(&self, offset: u32) -> Option<&Node> {
+    pub fn node_at_byte<'a>(&'a self, offset: u32, nodes: &'a [Node]) -> Option<&'a Node> {
         if offset < self.start_byte || offset >= self.end_byte {
             return None;
         }
-        for child in &self.children {
-            if let Some(found) = child.node_at_byte(offset) {
-                return Some(found);
+        for &child_idx in &self.children {
+            if let Some(child) = nodes.get(child_idx) {
+                if let Some(found) = child.node_at_byte(offset, nodes) {
+                    return Some(found);
+                }
             }
         }
         Some(self)
     }
 }
 
-/// A cursor for walking a `Tree` in DFS order, using a path of child indices.
+/// A cursor for walking a [`Tree`] in DFS order, using a path of child
+/// indices into the arena.
 pub struct TreeCursor<'a> {
-    tree: &'a Tree,
+    nodes: &'a [Node],
+    root: Option<NodeId>,
     path: Vec<usize>,
 }
 
@@ -139,11 +316,12 @@ impl<'a> TreeCursor<'a> {
     /// Resolve the current node from the path.
     #[must_use]
     pub fn node(&self) -> Option<&'a Node> {
-        let mut node = self.tree.root.as_ref()?;
-        for &idx in &self.path {
-            node = node.children.get(idx)?;
+        let mut idx = self.root?;
+        for &depth in &self.path {
+            let node = self.nodes.get(idx)?;
+            idx = *node.children.get(depth)?;
         }
-        Some(node)
+        self.nodes.get(idx)
     }
 
     /// Move to the first child of the current node.
@@ -159,10 +337,6 @@ impl<'a> TreeCursor<'a> {
     }
 
     /// Move to the next sibling of the current node.
-    ///
-    /// Returns `false` and leaves the cursor unchanged if there is no next
-    /// sibling. The path index is only committed when the sibling exists, so
-    /// a subsequent `goto_parent` / `goto_first_child` round-trip is safe.
     pub fn goto_next_sibling(&mut self) -> bool {
         if self.path.is_empty() {
             return false;
@@ -172,7 +346,6 @@ impl<'a> TreeCursor<'a> {
         if self.node().is_some() {
             true
         } else {
-            // Roll back: leave the cursor pointing at the last valid sibling.
             self.path[len - 1] -= 1;
             false
         }
@@ -213,16 +386,16 @@ impl MutableTree {
         }
     }
 
-    /// Allocate an already-configured `InternalNode`. Sets up parent back-pointers
-    /// for its children.
+    /// Allocate an already-configured `InternalNode`. Sets up parent
+    /// back-pointers for its children.
+    #[must_use]
     pub fn alloc(&mut self, mut node: InternalNode) -> u32 {
         let id = self.next_node_id;
         self.next_node_id += 1;
 
         let first_child = node.first_child;
-        let named_count = count_named_children(&self.nodes, first_child);
-        node.named_child_count = named_count;
-        node.child_count = count_children(&self.nodes, first_child);
+        node.named_child_count = count_children(&self.nodes, first_child, true);
+        node.child_count = count_children(&self.nodes, first_child, false);
 
         self.nodes.push(node);
 
@@ -250,8 +423,6 @@ impl MutableTree {
         end_position: (u32, u32),
         is_named: bool,
     ) -> u32 {
-        // `is_named` marks this node itself as named; it has no children, so
-        // both child counts are always 0 for leaf tokens.
         let mut flags = NodeFlags::new();
         flags.set_named(is_named);
         self.alloc(InternalNode {
@@ -269,20 +440,40 @@ impl MutableTree {
             parent: None,
             field_id: None,
             flags,
+            parser_state: None,
         })
     }
 
+    /// Compute the combined span covering all given child nodes.
+    #[must_use]
+    pub fn span_for_children(&self, children: &[u32]) -> TextSpan {
+        if children.is_empty() {
+            return TextSpan {
+                start_byte: 0,
+                end_byte: 0,
+                start_position: (0, 0),
+                end_position: (0, 0),
+            };
+        }
+        let first = &self.nodes[children[0] as usize];
+        let last = &self.nodes[children[children.len() - 1] as usize];
+        TextSpan {
+            start_byte: first.start_byte,
+            end_byte: last.end_byte,
+            start_position: (first.start_row, first.start_col),
+            end_position: (last.end_row, last.end_col),
+        }
+    }
+
     /// Allocate an internal (nonterminal) node with given child indices.
-    /// Links children into a sibling list and sets parent back-pointers.
-    #[allow(clippy::too_many_arguments)]
+    ///
+    /// # Panics
+    /// Panics if `children.len()` exceeds `u32::MAX`.
     pub fn alloc_internal(
         &mut self,
         kind: SymbolId,
         children: &[u32],
-        start_byte: u32,
-        end_byte: u32,
-        start_position: (u32, u32),
-        end_position: (u32, u32),
+        span: TextSpan,
         is_named: bool,
     ) -> u32 {
         let id = self.next_node_id;
@@ -296,7 +487,7 @@ impl MutableTree {
             }
         }
 
-        let child_count = u32::try_from(children.len()).unwrap_or(u32::MAX);
+        let child_count = u32::try_from(children.len()).expect("child count exceeds u32");
         let named_child_count = children
             .iter()
             .filter(|&&cid| {
@@ -305,18 +496,19 @@ impl MutableTree {
                     .is_some_and(|n| n.flags.is_named())
             })
             .count();
-        let named_child_count = u32::try_from(named_child_count).unwrap_or(u32::MAX);
+        let named_child_count =
+            u32::try_from(named_child_count).expect("named child count exceeds u32");
 
         let mut flags = NodeFlags::new();
         flags.set_named(is_named);
         self.nodes.push(InternalNode {
             kind,
-            start_byte,
-            end_byte,
-            start_row: start_position.0,
-            start_col: start_position.1,
-            end_row: end_position.0,
-            end_col: end_position.1,
+            start_byte: span.start_byte,
+            end_byte: span.end_byte,
+            start_row: span.start_position.0,
+            start_col: span.start_position.1,
+            end_row: span.end_position.0,
+            end_col: span.end_position.1,
             child_count,
             named_child_count,
             first_child,
@@ -324,90 +516,103 @@ impl MutableTree {
             parent: None,
             field_id: None,
             flags,
+            parser_state: None,
         });
 
         id
     }
 
-    /// Freeze the mutable tree into an immutable `Tree`.
-    #[must_use]
+    /// Freeze the mutable tree into an immutable [`Tree`] backed by a
+    /// compact arena of [`Node`]s wrapped in [`Arc`].
     ///
     /// The root is the *last* node with no parent. During GLR parsing, every
-    /// shift and reduction allocates nodes in order; the final Accept reduction
-    /// produces the topmost node last. Nodes from dead GLR branches are never
-    /// linked as children of anything, so they also have no parent — but they
-    /// are always allocated earlier than the root. Taking the last parentless
-    /// node therefore reliably selects the accepted root.
+    /// shift and reduction allocates nodes in order; the final Accept
+    /// reduction produces the topmost node last. Nodes from dead GLR branches
+    /// are never linked as children of anything, so they also have no parent
+    /// — but they are always allocated earlier than the root. Taking the last
+    /// parentless node therefore reliably selects the accepted root.
+    ///
+    /// # Panics
+    /// Panics if a root node is found but its arena index cannot be resolved
+    /// after the post-order traversal.
+    #[must_use]
     pub fn freeze(&self) -> Tree {
-        if self.nodes.is_empty() {
-            return Tree { root: None };
-        }
-
-        let root_internal = self.nodes.iter().rev().find(|n| n.parent.is_none());
-
-        match root_internal {
-            Some(internal) => {
-                let root = build_immutable_node(&self.nodes, internal);
-                Tree { root: Some(root) }
+        fn collect_ids(
+            internal: &[InternalNode],
+            id: u32,
+            out: &mut Vec<u32>,
+            visited: &mut alloc::collections::BTreeSet<u32>,
+        ) {
+            if !visited.insert(id) {
+                return;
             }
-            None => Tree { root: None },
+            let node = &internal[id as usize];
+            let mut c = node.first_child;
+            while let Some(cid) = c {
+                collect_ids(internal, cid, out, visited);
+                c = internal.get(cid as usize).and_then(|n| n.next_sibling);
+            }
+            out.push(id);
         }
+
+        if self.nodes.is_empty() {
+            return Tree::from_arena(Vec::new(), None);
+        }
+
+        let Some(root_idx) = self.nodes.iter().rposition(|n| n.parent.is_none()) else {
+            return Tree::from_arena(Vec::new(), None);
+        };
+        let root_idx_u32 = u32::try_from(root_idx).expect("root index exceeds u32");
+
+        // Build the flat arena via post-order traversal so children precede
+        // their parent (good for cache locality).
+        let mut arena_nodes: Vec<Node> = Vec::with_capacity(self.nodes.len());
+        let mut id_map: alloc::vec::Vec<Option<NodeId>> = alloc::vec![None; self.nodes.len()];
+
+        let mut order: Vec<u32> = Vec::new();
+        let mut visited = alloc::collections::BTreeSet::new();
+        collect_ids(&self.nodes, root_idx_u32, &mut order, &mut visited);
+
+        for &old_id in &order {
+            let old = &self.nodes[old_id as usize];
+            let new_id = arena_nodes.len();
+
+            let mut children: Vec<NodeId> = Vec::new();
+            let mut c = old.first_child;
+            while let Some(cid) = c {
+                if let Some(mapped) = id_map[cid as usize] {
+                    children.push(mapped);
+                }
+                c = self.nodes.get(cid as usize).and_then(|n| n.next_sibling);
+            }
+
+            arena_nodes.push(Node {
+                kind: old.kind,
+                start_byte: old.start_byte,
+                end_byte: old.end_byte,
+                start_position: (old.start_row, old.start_col),
+                end_position: (old.end_row, old.end_col),
+                children,
+                flags: old.flags,
+                parser_state: old.parser_state,
+                field_id: old.field_id,
+            });
+            id_map[old_id as usize] = Some(new_id);
+        }
+
+        let root_new_id = id_map[root_idx_u32 as usize].unwrap();
+        Tree::from_arena(arena_nodes, Some(root_new_id))
     }
 }
 
-fn build_immutable_node(all_nodes: &[InternalNode], node: &InternalNode) -> Node {
-    let mut children = Vec::new();
-    let mut c = node.first_child;
-    // Guard against corrupted next_sibling cycles: track visited ids.
-    // In a well-formed tree this never fires; it's a safety net.
-    let mut visited_siblings: alloc::collections::BTreeSet<u32> =
-        alloc::collections::BTreeSet::new();
-    while let Some(child_id) = c {
-        if !visited_siblings.insert(child_id) {
-            // Cycle detected — stop rather than loop forever.
-            break;
-        }
-        if let Some(child) = all_nodes.get(child_id as usize) {
-            children.push(build_immutable_node(all_nodes, child));
-            c = child.next_sibling;
-        } else {
-            break;
-        }
-    }
-
-    Node {
-        kind: node.kind,
-        start_byte: node.start_byte,
-        end_byte: node.end_byte,
-        start_position: (node.start_row, node.start_col),
-        end_position: (node.end_row, node.end_col),
-        children,
-        flags: node.flags,
-    }
-}
-
-fn count_named_children(nodes: &[InternalNode], first_child: Option<u32>) -> u32 {
+fn count_children(nodes: &[InternalNode], first_child: Option<u32>, named_only: bool) -> u32 {
     let mut count = 0;
     let mut c = first_child;
     while let Some(id) = c {
         if let Some(n) = nodes.get(id as usize) {
-            if n.flags.is_named() {
+            if !named_only || n.flags.is_named() {
                 count += 1;
             }
-            c = n.next_sibling;
-        } else {
-            break;
-        }
-    }
-    count
-}
-
-fn count_children(nodes: &[InternalNode], first_child: Option<u32>) -> u32 {
-    let mut count = 0;
-    let mut c = first_child;
-    while let Some(id) = c {
-        if let Some(n) = nodes.get(id as usize) {
-            count += 1;
             c = n.next_sibling;
         } else {
             break;
@@ -433,4 +638,7 @@ pub struct InternalNode {
     pub parent: Option<u32>,
     pub field_id: Option<u16>,
     pub flags: NodeFlags,
+    /// LR parser state at this node boundary. Set by the parser during
+    /// reduction; used by incremental re-parse for subtree reuse.
+    pub parser_state: Option<StateId>,
 }

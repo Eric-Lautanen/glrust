@@ -15,7 +15,7 @@ pub struct GrammarJson {
     #[serde(default)]
     pub conflicts: Vec<Vec<String>>,
     #[serde(default)]
-    pub precedences: Vec<Vec<Rule>>,
+    pub precedences: Vec<Vec<String>>,
     #[serde(default)]
     pub externals: Vec<Rule>,
     #[serde(default)]
@@ -102,6 +102,7 @@ pub enum Rule {
 }
 
 impl Rule {
+    #[must_use]
     pub fn is_named(&self) -> bool {
         matches!(
             self,

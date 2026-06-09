@@ -7,8 +7,12 @@ repository.workspace = true
 authors.workspace = true
 
 description = "Grammar compiler: reads tree-sitter grammar.json and produces compiled Grammar"
+keywords = ["glr", "grammar", "compiler", "tree-sitter", "lr1"]
+documentation = "https://docs.rs/glr-grammar"
 
 [dependencies]
-glr-core = { path = "../glr-core" }
+glr-core = { path = "../glr-core", features = ["serde"] }
+glr-engine = { path = "../glr-engine" }
+glr-lexer = { path = "../glr-lexer" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

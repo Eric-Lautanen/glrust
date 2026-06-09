@@ -6,6 +6,8 @@ pub struct Token {
     pub kind: SymbolId,
     pub start_byte: u32,
     pub end_byte: u32,
+    pub start_position: (u32, u32),
+    pub end_position: (u32, u32),
 }
 
 /// The reason `next_token` returned `None`.
@@ -55,4 +57,52 @@ pub trait Lexer {
     ///   plain data.
     /// - Calling `reset_to` with the value returned by `cursor()` is a no-op.
     fn reset_to(&mut self, byte_offset: u32);
+
+    /// Serialize lexer/external scanner state for checkpointing during
+    /// incremental re-parse. Default implementation is a no-op.
+    fn serialize_state(&self, _buffer: &mut [u8]) -> usize {
+        0
+    }
+
+    /// Restore lexer/external scanner state from a prior `serialize_state`
+    /// call. Default implementation is a no-op.
+    fn deserialize_state(&mut self, _buffer: &[u8]) {}
+}
+
+/// Trait for external scanners that handle tokens that cannot be expressed as
+/// regular languages (e.g. Python INDENT/DEDENT, Bash heredocs, JS template
+/// strings).
+///
+/// Mirrors tree-sitter's C external scanner API. The parser calls `scan` when
+/// the built-in DFA lexer cannot match a token. The scanner MUST check
+/// `valid_symbols` before emitting any token — at any given parse state only
+/// certain external tokens are legal.
+pub trait ExternalScanner {
+    /// Attempt to scan the next external token.
+    ///
+    /// Returns `Some(symbol_id)` and updates `cursor` if a token was matched,
+    /// or `None` if no external token applies at this position (the parser
+    /// will fall back to the built-in lexer).
+    ///
+    /// `valid_symbols` is indexed by external token id (`SymbolId` offset
+    /// within the external token range). The scanner must check this array
+    /// before deciding which token to produce.
+    fn scan(&mut self, source: &[u8], cursor: &mut u32, valid_symbols: &[bool])
+        -> Option<SymbolId>;
+
+    /// Serialize scanner state to `buffer` (up to 1024 bytes).
+    ///
+    /// Returns the number of bytes written. Called before the parser's GSS is
+    /// checkpointed so the scanner state can be restored alongside it during
+    /// incremental re-parse.
+    fn serialize(&self, buffer: &mut [u8]) -> usize;
+
+    /// Restore scanner state from `buffer` (previously written by
+    /// `serialize`).
+    fn deserialize(&mut self, buffer: &[u8]);
+
+    /// Create a new scanner instance.
+    fn create() -> Self
+    where
+        Self: Sized;
 }

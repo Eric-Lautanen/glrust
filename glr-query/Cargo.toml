@@ -7,6 +7,8 @@ repository.workspace = true
 authors.workspace = true
 
 description = "Query compiler and executor for tree-sitter-compatible .scm pattern matching"
+keywords = ["glr", "query", "scm", "pattern-matching", "tree-sitter"]
+documentation = "https://docs.rs/glr-query"
 
 [dependencies]
 glr-core = { path = "../glr-core" }

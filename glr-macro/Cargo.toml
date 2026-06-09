@@ -7,6 +7,8 @@ repository.workspace = true
 authors.workspace = true
 
 description = "Procedural macro for defining GLR grammars via Rust-native DSL"
+keywords = ["glr", "macro", "procedural", "grammar", "dsl"]
+documentation = "https://docs.rs/glr-macro"
 
 [lib]
 proc-macro = true

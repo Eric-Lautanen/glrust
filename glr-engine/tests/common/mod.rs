@@ -1,6 +1,6 @@
 use glr_core::parse_table::{ParseTable, ParseTableAction, ParseTableEntry};
 use glr_core::symbol::{Symbol, SymbolKind};
-use glr_core::{Grammar, ProductionId, StateId, SymbolId};
+use glr_core::{position_at, Grammar, ProductionId, StateId, SymbolId};
 use glr_lexer::{LexError, Lexer, Token};
 use std::collections::{BTreeSet, HashMap};
 use std::vec::Vec;
@@ -247,6 +247,8 @@ impl TestGrammarBuilder {
                 nonterminal: SymbolId(*nt),
                 symbols: rhs.iter().map(|&s| SymbolId(s)).collect(),
                 dynamic_precedence: *prec,
+                field_map: Vec::new(),
+                alias_map: Vec::new(),
             })
             .collect();
 
@@ -259,7 +261,9 @@ impl TestGrammarBuilder {
         };
 
         Grammar {
-            version: 14,
+            format_version: 1,
+            version: 15,
+            min_compatible_version: 13,
             symbol_count,
             alias_count: 0,
             token_count: terminal_count,
@@ -272,6 +276,15 @@ impl TestGrammarBuilder {
             symbols: syms,
             productions,
             parse_table: table,
+            fields: Vec::new(),
+            supertypes: Vec::new(),
+            word_token: None,
+            word_symbol_id: None,
+            precedence_groups: Vec::new(),
+            conflict_decls: Vec::new(),
+            reserved: Vec::new(),
+            dfa_table: glr_core::DfaTable::new(Vec::new()),
+            line_start_offsets: Vec::new(),
         }
     }
 }
@@ -305,7 +318,6 @@ impl<'a> Lexer for TestLexer<'a> {
             self.last_error = LexError::Eof;
             return None;
         }
-        // Skip whitespace
         while self.cursor < len && self.source[self.cursor as usize].is_ascii_whitespace() {
             self.cursor += 1;
         }
@@ -314,26 +326,34 @@ impl<'a> Lexer for TestLexer<'a> {
             return None;
         }
 
+        let start = self.cursor;
+
+        let start_pos = position_at(self.source, start);
         let remaining = &self.source[self.cursor as usize..];
         for &(sym_id, literal) in &self.token_map {
             if remaining.starts_with(literal) {
-                let start = self.cursor;
-                self.cursor += literal.len() as u32;
+                let end = self.cursor + literal.len() as u32;
+                let end_pos = position_at(self.source, end);
+                self.cursor = end;
                 return Some(Token {
                     kind: SymbolId(sym_id),
                     start_byte: start,
-                    end_byte: self.cursor,
+                    end_byte: end,
+                    start_position: start_pos,
+                    end_position: end_pos,
                 });
             }
         }
 
-        // Fallback: emit one byte as unknown token
-        let start = self.cursor;
+        self.last_error = LexError::NoMatch;
         self.cursor += 1;
+        let end_pos = position_at(self.source, self.cursor);
         Some(Token {
-            kind: SymbolId(0),
+            kind: SymbolId::UNKNOWN,
             start_byte: start,
             end_byte: self.cursor,
+            start_position: start_pos,
+            end_position: end_pos,
         })
     }
 

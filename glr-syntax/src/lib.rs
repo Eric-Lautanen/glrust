@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! Syntax highlighting pipeline.
 //!
 //! Consumes a compiled `Grammar`, a set of compiled `Query` objects from `.scm`

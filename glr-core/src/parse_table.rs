@@ -1,4 +1,5 @@
 use crate::{StateId, SymbolId};
+use alloc::vec;
 use alloc::vec::Vec;
 
 /// Wraps one or more parse-table entries for a single (state, symbol) cell.
@@ -53,7 +54,13 @@ impl ParseTable {
         let s = state.0 as usize;
         let sym = symbol.0 as usize;
         if s < self.large_state_count as usize {
-            let idx = s * self.symbol_count as usize + sym;
+            let idx = match s
+                .checked_mul(self.symbol_count as usize)
+                .and_then(|prod| prod.checked_add(sym))
+            {
+                Some(i) => i,
+                None => return &[],
+            };
             self.large_entries
                 .get(idx)
                 .map_or(&[], |a| a.entries.as_slice())
@@ -89,12 +96,8 @@ impl SmallStateRow {
 
     #[must_use]
     pub fn lookup(&self, symbol: usize) -> Option<&ParseTableAction> {
-        let Ok(i) = self
-            .entries
-            .binary_search_by_key(&u32::try_from(symbol).unwrap_or(u32::MAX), |&(s, _)| s)
-        else {
-            return None;
-        };
+        let sym_u32 = u32::try_from(symbol).ok()?;
+        let i = self.entries.binary_search_by_key(&sym_u32, |&(s, _)| s).ok()?;
         Some(&self.entries[i].1)
     }
 }

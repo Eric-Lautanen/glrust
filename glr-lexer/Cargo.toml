@@ -7,10 +7,14 @@ repository.workspace = true
 authors.workspace = true
 
 description = "DFA-based lexer and ExternalScanner trait for GLR parsing"
+keywords = ["glr", "lexer", "dfa", "tokenizer", "scanner"]
+documentation = "https://docs.rs/glr-lexer"
 
 [features]
-default = ["std"]
-std = []
+default = ["std", "regex"]
+std = ["glr-core/std"]
+regex = ["dep:regex", "std"]
 
 [dependencies]
-glr-core = { path = "../glr-core" }
+glr-core = { path = "../glr-core", default-features = false }
+regex = { version = "1", optional = true, default-features = false, features = ["std"] }

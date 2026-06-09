@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! Fuzz testing targets (Tier 3 validation).
 //!
 //! Targets for `cargo fuzz`:

@@ -7,7 +7,10 @@ repository.workspace = true
 authors.workspace = true
 
 description = "Syntax highlighting pipeline: consumes .scm query files and produces highlight ranges"
+keywords = ["glr", "syntax", "highlight", "tree-sitter", "syntax-highlighting"]
+documentation = "https://docs.rs/glr-syntax"
 
 [dependencies]
 glr-core = { path = "../glr-core" }
+glr-engine = { path = "../glr-engine" }
 glr-query = { path = "../glr-query" }

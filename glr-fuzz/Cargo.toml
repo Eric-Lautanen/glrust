@@ -7,6 +7,8 @@ repository.workspace = true
 authors.workspace = true
 
 description = "Fuzz testing targets (Tier 3 validation) using cargo-fuzz"
+keywords = ["glr", "fuzz", "testing", "parser", "fuzzing"]
+documentation = "https://docs.rs/glr-fuzz"
 
 [dependencies]
 glr-core = { path = "../glr-core" }

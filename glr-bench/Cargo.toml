@@ -7,13 +7,15 @@ repository.workspace = true
 authors.workspace = true
 
 description = "Performance benchmarks (Tier 4 validation) using Criterion"
+keywords = ["glr", "benchmark", "criterion", "parser", "performance"]
+documentation = "https://docs.rs/glr-bench"
 
 [dependencies]
 glr-core = { path = "../glr-core" }
 glr-engine = { path = "../glr-engine" }
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 [[bench]]
 name = "parse"

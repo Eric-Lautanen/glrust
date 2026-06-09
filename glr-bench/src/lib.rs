@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! Performance benchmarks (Tier 4 validation).
 //!
 //! Criterion benchmarks for:

@@ -1,5 +1,7 @@
+use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
+
 use core::fmt;
 use glr_core::StateId;
 
@@ -22,6 +24,8 @@ pub struct GssNode {
     pub position: u32,
     /// parent edges — more than one means GLR merge occurred here
     pub edges: Vec<GssEdge>,
+    /// Serialized external scanner state at this node boundary.
+    pub scanner_state: Vec<u8>,
 }
 
 impl fmt::Debug for GssNode {
@@ -41,6 +45,8 @@ pub struct Gss {
     /// Active heads — indices into `nodes`. Multiple heads may point to the
     /// same GSS node.
     pub heads: Vec<u32>,
+    /// Map from `(state.0, position)` to index in `nodes` for O(log n) lookup.
+    node_map: BTreeMap<(u32, u32), u32>,
 }
 
 impl Gss {
@@ -49,10 +55,14 @@ impl Gss {
             state: initial_state,
             position: 0,
             edges: Vec::new(),
+            scanner_state: Vec::new(),
         };
+        let mut map = BTreeMap::new();
+        map.insert((initial_state.0, 0), 0);
         Self {
             nodes: vec![root],
             heads: vec![0],
+            node_map: map,
         }
     }
 
@@ -62,18 +72,20 @@ impl Gss {
     /// to enqueue `id` as a head — this method never touches `self.heads`.
     /// Separating node allocation from head management avoids spurious duplicate
     /// head entries during GLR merge.
+    #[must_use]
     pub fn find_or_create_node(&mut self, state: StateId, position: u32) -> (u32, bool) {
-        for (i, n) in self.nodes.iter().enumerate() {
-            if n.state == state && n.position == position {
-                return (i as u32, false);
-            }
+        let key = (state.0, position);
+        if let Some(&id) = self.node_map.get(&key) {
+            return (id, false);
         }
-        let id = self.nodes.len() as u32;
+        let id = u32::try_from(self.nodes.len()).expect("GSS node count exceeds u32");
         self.nodes.push(GssNode {
             state,
             position,
             edges: Vec::new(),
+            scanner_state: Vec::new(),
         });
+        self.node_map.insert(key, id);
         (id, true)
     }
 
@@ -90,36 +102,58 @@ impl Gss {
     /// `children[depth-1]` is the rightmost.
     ///
     /// The LR stack grows left-to-right as symbols are shifted, so the current
-    /// node holds the *rightmost* symbol of the RHS and the recursion unwinds
-    /// toward the *leftmost*. We therefore prepend (via index 0) rather than
-    /// append, giving natural LR order without a post-pass reversal.
+    /// node holds the *rightmost* symbol of the RHS and the walk proceeds
+    /// toward the *leftmost*. Children are built outermost-first then reversed
+    /// to give natural LR order [leftmost, ..., rightmost] without recursion.
+    ///
+    /// Uses a single mutable `children` Vec with push/pop to avoid cloning at
+    /// every edge — the Vec is cloned only at leaf nodes where a full path
+    /// has been assembled.
+    #[must_use]
     pub fn ancestor_paths(&self, node_idx: u32, depth: u32) -> Vec<(u32, Vec<u32>)> {
         if depth == 0 {
             return vec![(node_idx, Vec::new())];
         }
+        // Single mutable children Vec reused across all paths (push/pop).
+        // Stack tracks: (node_index, next_edge_index, children_len_before_node).
+        let mut children: Vec<u32> = Vec::with_capacity(depth as usize);
+        let mut stack: Vec<(u32, usize, usize)> = Vec::new();
         let mut result = Vec::new();
-        if let Some(node) = self.nodes.get(node_idx as usize) {
-            for edge in &node.edges {
-                for (ancestor, mut chain) in self.ancestor_paths(edge.parent, depth - 1) {
-                    // Prepend so that the leftmost RHS symbol ends at index 0.
-                    chain.insert(0, edge.tree_node);
-                    result.push((ancestor, chain));
+
+        stack.push((node_idx, 0, 0));
+        while let Some((idx, edge_idx, prefix_len)) = stack.last() {
+            let idx = *idx;
+            let edge_idx = *edge_idx;
+            let prefix_len = *prefix_len;
+
+            if children.len() as u32 == depth {
+                let mut path = children.clone();
+                path.reverse();
+                result.push((idx, path));
+                stack.pop();
+                children.truncate(prefix_len);
+                continue;
+            }
+
+            let node = match self.nodes.get(idx as usize) {
+                Some(n) => n,
+                None => {
+                    stack.pop();
+                    children.truncate(prefix_len);
+                    continue;
                 }
+            };
+
+            if edge_idx < node.edges.len() {
+                let edge = &node.edges[edge_idx];
+                stack.last_mut().unwrap().1 = edge_idx + 1;
+                children.push(edge.tree_node);
+                stack.push((edge.parent, 0, children.len() - 1));
+            } else {
+                stack.pop();
+                children.truncate(prefix_len);
             }
         }
         result
-    }
-
-    /// Remove a head by index.
-    #[allow(dead_code)]
-    pub fn remove_head(&mut self, head_idx: usize) {
-        if head_idx < self.heads.len() {
-            self.heads.swap_remove(head_idx);
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn head_count(&self) -> usize {
-        self.heads.len()
     }
 }

@@ -1,0 +1,23 @@
+[package]
+name = "glrust"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+description = "Facade crate for the GLR parser ecosystem — re-exports all glr-* sub-crates"
+keywords = ["glr", "parser", "glr-parser", "tree-sitter", "rnglr", "grammar", "lexer"]
+documentation = "https://docs.rs/glrust"
+
+[dependencies]
+glr-core = { path = "../glr-core" }
+glr-engine = { path = "../glr-engine" }
+glr-lexer = { path = "../glr-lexer" }
+glr-grammar = { path = "../glr-grammar" }
+glr-macro = { path = "../glr-macro" }
+glr-query = { path = "../glr-query" }
+glr-syntax = { path = "../glr-syntax" }
+glr-conformance = { path = "../glr-conformance" }
+glr-fuzz = { path = "../glr-fuzz" }
+glr-bench = { path = "../glr-bench" }

@@ -7,11 +7,13 @@ repository.workspace = true
 authors.workspace = true
 
 description = "GLR parser engine: parse loop, Graph-Structured Stack, error recovery"
+keywords = ["glr", "parser", "rnglr", "gss", "glr-parser"]
+documentation = "https://docs.rs/glr-engine"
 
 [features]
 default = ["std"]
-std = []
+std = ["glr-core/std", "glr-lexer/std"]
 
 [dependencies]
-glr-core = { path = "../glr-core" }
-glr-lexer = { path = "../glr-lexer" }
+glr-core = { path = "../glr-core", default-features = false }
+glr-lexer = { path = "../glr-lexer", default-features = false }
