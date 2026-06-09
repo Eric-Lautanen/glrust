@@ -3,10 +3,10 @@
 
 extern crate alloc;
 
-mod grammar;
-mod parse_table;
-mod symbol;
-mod tree;
+pub mod grammar;
+pub mod parse_table;
+pub mod symbol;
+pub mod tree;
 
 pub use grammar::Grammar;
 pub use parse_table::{ParseTable, ParseTableEntry, SmallStateRow};
