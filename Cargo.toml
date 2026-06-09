@@ -1,0 +1,23 @@
+[workspace]
+
+resolver = "2"
+
+members = [
+    "glr-core",
+    "glr-engine",
+    "glr-lexer",
+    "glr-grammar",
+    "glr-macro",
+    "glr-query",
+    "glr-syntax",
+    "glr-conformance",
+    "glr-fuzz",
+    "glr-bench",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/EricLautanen/glrust"
+authors = ["Eric-Lautanen"]

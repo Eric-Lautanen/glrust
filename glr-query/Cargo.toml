@@ -1,0 +1,12 @@
+[package]
+name = "glr-query"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+description = "Query compiler and executor for tree-sitter-compatible .scm pattern matching"
+
+[dependencies]
+glr-core = { path = "../glr-core" }

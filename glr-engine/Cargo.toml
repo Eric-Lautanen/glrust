@@ -1,0 +1,17 @@
+[package]
+name = "glr-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+description = "GLR parser engine: parse loop, Graph-Structured Stack, error recovery"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+glr-core = { path = "../glr-core" }
+glr-lexer = { path = "../glr-lexer" }

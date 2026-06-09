@@ -1,0 +1,18 @@
+[package]
+name = "glr-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+description = "Core data structures for GLR parsing: Grammar, ParseTable, Symbol, Tree"
+
+[features]
+default = ["std"]
+std = []
+serde = ["dep:serde", "dep:serde_derive"]
+
+[dependencies]
+serde = { version = "1", optional = true, default-features = false }
+serde_derive = { version = "1", optional = true }

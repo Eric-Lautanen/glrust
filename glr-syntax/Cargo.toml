@@ -1,0 +1,13 @@
+[package]
+name = "glr-syntax"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+description = "Syntax highlighting pipeline: consumes .scm query files and produces highlight ranges"
+
+[dependencies]
+glr-core = { path = "../glr-core" }
+glr-query = { path = "../glr-query" }

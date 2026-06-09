@@ -1,0 +1,14 @@
+[package]
+name = "glr-fuzz"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+description = "Fuzz testing targets (Tier 3 validation) using cargo-fuzz"
+
+[dependencies]
+glr-core = { path = "../glr-core" }
+glr-engine = { path = "../glr-engine" }
+glr-lexer = { path = "../glr-lexer" }

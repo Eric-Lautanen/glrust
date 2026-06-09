@@ -1,0 +1,16 @@
+[package]
+name = "glr-lexer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+description = "DFA-based lexer and ExternalScanner trait for GLR parsing"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+glr-core = { path = "../glr-core" }

@@ -1,0 +1,16 @@
+/target
+**/*.rs.bk
+Cargo.lock
+.DS_Store
+*.swp
+*.swo
+*~
+*.pyc
+__pycache__/
+.idea/
+*.iml
+.vscode/
+*.bin
+grammars/**/target/
+corpus/.gitkeep
+grammars/.gitkeep

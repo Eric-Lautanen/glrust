@@ -1,0 +1,21 @@
+[package]
+name = "glr-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+description = "Performance benchmarks (Tier 4 validation) using Criterion"
+
+[dependencies]
+glr-core = { path = "../glr-core" }
+glr-engine = { path = "../glr-engine" }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "parse"
+harness = false
+path = "benches/parse.rs"

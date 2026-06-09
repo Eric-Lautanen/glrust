@@ -1,0 +1,14 @@
+[package]
+name = "glr-conformance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+description = "Conformance test suite: compares GLR parser output against tree-sitter C baseline"
+
+[dependencies]
+glr-core = { path = "../glr-core" }
+glr-engine = { path = "../glr-engine" }
+glr-grammar = { path = "../glr-grammar" }
