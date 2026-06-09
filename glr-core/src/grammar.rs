@@ -1,7 +1,8 @@
+use crate::parse_table::ParseTable;
+use crate::symbol::Symbol;
 use crate::{ProductionId, SymbolId};
+use alloc::vec::Vec;
 
-/// A compiled grammar — the in-memory representation of a language's
-/// grammar suitable for the GLR parser engine.
 #[derive(Debug, Clone)]
 pub struct Grammar {
     pub version: u32,
@@ -14,10 +15,24 @@ pub struct Grammar {
     pub production_id_count: u32,
     pub field_count: u32,
     pub max_alias_sequence_length: u32,
+    pub symbols: Vec<Symbol>,
     pub productions: Vec<Production>,
+    pub parse_table: ParseTable,
 }
 
-/// A single grammar production: `Nonterminal → Symbol₁ Symbol₂ … Symbolₙ`.
+impl Grammar {
+    pub fn symbol_name(&self, id: SymbolId) -> &str {
+        self.symbols
+            .get(id.0 as usize)
+            .map(|s| s.name.as_str())
+            .unwrap_or("<unknown>")
+    }
+
+    pub fn production(&self, id: ProductionId) -> Option<&Production> {
+        self.productions.get(id.0 as usize)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Production {
     pub id: ProductionId,
