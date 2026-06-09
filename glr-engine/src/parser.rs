@@ -15,7 +15,7 @@ impl Parser {
         Self { grammar }
     }
 
-    pub fn parse_with_lexer<L: Lexer>(&self, source: &[u8], lexer: &mut L) -> Tree {
+    pub fn parse_with_lexer<L: Lexer>(&self, _source: &[u8], lexer: &mut L) -> Tree {
         let start_state = StateId(0);
         let mut gss = Gss::new(start_state);
         let mut tree = MutableTree::new();

@@ -11,15 +11,15 @@ detailed roadmap document with all phases, crate design, and validation strategy
 
 ## Completion status
 
-### Phase 0 — Foundation ✅ (complete)
+### Phase 0 — Foundation 🏗️ (scaffolded, not functionally complete)
 
 | Section | Status | Details |
 |---------|--------|---------|
 | 0.2 Core data structures | ✅ | `glr-core`: Grammar, ParseTable (flat Vec + large/small states), Symbol, StateId, ProductionId — all `#[no_std]` + serde |
-| 0.3 GLR engine | ✅ | `glr-engine`: GSS with node sharing by `(state, position)`, RNGLR algorithm scaffold, Lexer trait |
-| 0.3.1 Tests | ✅ | 6 integration tests with TestGrammarBuilder + TestLexer (ignored until RNGLR reduce loop is wired) |
-| 0.4 Tree construction | ✅ | MutableTree (arena) → Tree (immutable), TreeCursor with DFS walk, named children |
-| 0.5 Error recovery | ✅ | `SymbolId::ERROR` sentinel, token-skip resync, `parse()` always returns Tree |
+| 0.3 GLR engine | 🏗️ | GSS with node sharing by `(state, position)`, but **reduce loop not wired** — no GSS edges created, no reductions performed, no GOTO lookup, no ε-rule fixed-point. Parser struct and shift handler are scaffolded. |
+| 0.3.1 Tests | 🏗️ | 6 integration tests with TestGrammarBuilder + TestLexer. **All tests are `#[ignore]`d** because the engine cannot parse anything. |
+| 0.4 Tree construction | ✅ | MutableTree (arena) → Tree (immutable), TreeCursor with DFS walk, named children. |
+| 0.5 Error recovery | 🏗️ | `SymbolId::ERROR` sentinel and token-skip resync loop are present, but **untestable until engine reduce loop is wired**. Error recovery test is `#[ignore]`d. |
 
 ### Phase 1 — Lexer ⏳ (next)
 
