@@ -1,124 +1,103 @@
-use core::fmt;
-use serde::de::{self, Deserialize, Deserializer, Visitor};
+use serde::de::{self, Deserializer};
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
 
-#[derive(Debug)]
+/// Grammar as serialized by `tree-sitter generate` into `grammar.json`.
+///
+/// Matches tree-sitter's `parse_grammar.rs` `GrammarJSON` struct.
+#[derive(Debug, Deserialize)]
 pub struct GrammarJson {
     pub name: String,
     pub rules: HashMap<String, Rule>,
-    pub extras: Option<Vec<Rule>>,
-    pub conflicts: Option<Vec<Vec<String>>>,
-    pub precedences: Option<Vec<Vec<String>>>,
-    pub externals: Option<Vec<Rule>>,
-    pub inline: Option<Vec<String>>,
-    pub supertypes: Option<Vec<String>>,
+    #[serde(default)]
+    pub extras: Vec<Rule>,
+    #[serde(default)]
+    pub conflicts: Vec<Vec<String>>,
+    #[serde(default)]
+    pub precedences: Vec<Vec<Rule>>,
+    #[serde(default)]
+    pub externals: Vec<Rule>,
+    #[serde(default)]
+    pub inline: Vec<String>,
+    #[serde(default)]
+    pub supertypes: Vec<String>,
+    #[serde(default)]
     pub word: Option<String>,
+    #[serde(default)]
+    pub reserved: HashMap<String, Vec<Rule>>,
 }
 
-/// Visitor that deserializes a GrammarJson from a JSON object map.
-struct GrammarJsonVisitor;
-
-impl<'de> Visitor<'de> for GrammarJsonVisitor {
-    type Value = GrammarJson;
-
-    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("a grammar JSON object")
-    }
-
-    fn visit_map<M>(self, mut map: M) -> Result<GrammarJson, M::Error>
-    where
-        M: de::MapAccess<'de>,
-    {
-        let mut name = None;
-        let mut rules = None;
-        let mut extras = None;
-        let mut conflicts = None;
-        let mut precedences = None;
-        let mut externals = None;
-        let mut inline = None;
-        let mut supertypes = None;
-        let mut word = None;
-
-        while let Some(key) = map.next_key::<String>()? {
-            match key.as_str() {
-                "name" => name = Some(map.next_value()?),
-                "rules" => rules = Some(map.next_value()?),
-                "extras" => extras = Some(map.next_value()?),
-                "conflicts" => conflicts = Some(map.next_value()?),
-                "precedences" => precedences = Some(map.next_value()?),
-                "externals" => externals = Some(map.next_value()?),
-                "inline" => inline = Some(map.next_value()?),
-                "supertypes" => supertypes = Some(map.next_value()?),
-                "word" => word = Some(map.next_value()?),
-                _ => {
-                    let _: Value = map.next_value()?;
-                }
-            }
-        }
-
-        Ok(GrammarJson {
-            name: name.ok_or_else(|| de::Error::missing_field("name"))?,
-            rules: rules.ok_or_else(|| de::Error::missing_field("rules"))?,
-            extras,
-            conflicts,
-            precedences,
-            externals,
-            inline,
-            supertypes,
-            word,
-        })
-    }
+/// Precedence value: either a string name or a number.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum PrecedenceValue {
+    Named(String),
+    Number(i32),
 }
 
-impl<'de> Deserialize<'de> for GrammarJson {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_map(GrammarJsonVisitor)
-    }
-}
-
-#[derive(Debug)]
+/// A grammar rule, matching tree-sitter's `RuleJSON` enum from
+/// `parse_grammar.rs` with an `Unknown` catch-all for unrecognized types.
+#[derive(Debug, Clone)]
 pub enum Rule {
-    /// Symbol reference: bare string like `"expression"` is shorthand
-    /// for `{"type": "SYMBOL", "name": "expression"}`.
-    Symbol(String),
-    /// Token string literal: `{"type": "STRING", "value": "..."}`
-    String { value: String },
-    /// Regex pattern: `{"type": "PATTERN", "value": "..."}`
-    Pattern { value: String },
-    /// Sequence: `{"type": "SEQ", "members": [...]}`
-    Seq { members: Vec<Rule> },
-    /// Choice / alternation: `{"type": "CHOICE", "members": [...]}`
-    Choice { members: Vec<Rule> },
-    /// Zero-or-more repetition: `{"type": "REPEAT", "content": ...}`
-    Repeat { content: Box<Rule> },
-    /// Named field: `{"type": "FIELD", "name": "...", "content": ...}`
-    Field { name: String, content: Box<Rule> },
-    /// Precedence: `{"type": "PREC", "value": N, "content": ...}`
-    Prec { value: i32, content: Box<Rule> },
-    /// Left-associative precedence: `{"type": "PREC_LEFT", "value": N, "content": ...}`
-    PrecLeft { value: i32, content: Box<Rule> },
-    /// Right-associative precedence: `{"type": "PREC_RIGHT", "value": N, "content": ...}`
-    PrecRight { value: i32, content: Box<Rule> },
-    /// Dynamic precedence: `{"type": "PREC_DYNAMIC", "value": ..., "content": ...}`
-    PrecDynamic {
-        value: Box<Rule>,
-        content: Box<Rule>,
-    },
-    /// Alias: `{"type": "ALIAS", "value": ..., "named": bool, "content": ...}`
     Alias {
-        value: Box<Rule>,
+        content: Box<Rule>,
         named: bool,
+        value: String,
+    },
+    Blank,
+    String {
+        value: String,
+    },
+    Pattern {
+        value: String,
+        flags: Option<String>,
+    },
+    Symbol {
+        name: String,
+    },
+    Choice {
+        members: Vec<Rule>,
+    },
+    Field {
+        name: String,
         content: Box<Rule>,
     },
-    /// Token (lexical rule): `{"type": "TOKEN", "content": ...}`
-    Token { content: Box<Rule> },
-    /// Immediate token: `{"type": "IMMEDIATE_TOKEN", "content": ...}`
-    ImmediateToken { content: Box<Rule> },
-    /// Catch-all for unrecognized rule types (BLANK, etc.)
+    Seq {
+        members: Vec<Rule>,
+    },
+    Repeat {
+        content: Box<Rule>,
+    },
+    Repeat1 {
+        content: Box<Rule>,
+    },
+    Prec {
+        value: PrecedenceValue,
+        content: Box<Rule>,
+    },
+    PrecLeft {
+        value: PrecedenceValue,
+        content: Box<Rule>,
+    },
+    PrecRight {
+        value: PrecedenceValue,
+        content: Box<Rule>,
+    },
+    PrecDynamic {
+        value: i32,
+        content: Box<Rule>,
+    },
+    Token {
+        content: Box<Rule>,
+    },
+    ImmediateToken {
+        content: Box<Rule>,
+    },
+    Reserved {
+        context_name: String,
+        content: Box<Rule>,
+    },
     Unknown(Value),
 }
 
@@ -126,154 +105,179 @@ impl Rule {
     pub fn is_named(&self) -> bool {
         matches!(
             self,
-            Rule::Symbol(_) | Rule::Choice { .. } | Rule::Seq { .. }
+            Rule::Symbol { .. } | Rule::Choice { .. } | Rule::Seq { .. }
         )
     }
 }
+
+/// Internal tagged enum matching tree-sitter's `RuleJSON` exactly.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum RuleTagged {
+    Alias {
+        content: Box<RuleTagged>,
+        named: bool,
+        value: String,
+    },
+    Blank,
+    String {
+        value: String,
+    },
+    Pattern {
+        value: String,
+        flags: Option<String>,
+    },
+    Symbol {
+        name: String,
+    },
+    Choice {
+        members: Vec<RuleTagged>,
+    },
+    Field {
+        name: String,
+        content: Box<RuleTagged>,
+    },
+    Seq {
+        members: Vec<RuleTagged>,
+    },
+    Repeat {
+        content: Box<RuleTagged>,
+    },
+    Repeat1 {
+        content: Box<RuleTagged>,
+    },
+    Prec {
+        value: PrecedenceValue,
+        content: Box<RuleTagged>,
+    },
+    PrecLeft {
+        value: PrecedenceValue,
+        content: Box<RuleTagged>,
+    },
+    PrecRight {
+        value: PrecedenceValue,
+        content: Box<RuleTagged>,
+    },
+    PrecDynamic {
+        value: i32,
+        content: Box<RuleTagged>,
+    },
+    Token {
+        content: Box<RuleTagged>,
+    },
+    ImmediateToken {
+        content: Box<RuleTagged>,
+    },
+    Reserved {
+        context_name: String,
+        content: Box<RuleTagged>,
+    },
+}
+
+fn convert_tagged(t: RuleTagged) -> Rule {
+    match t {
+        RuleTagged::Alias {
+            content,
+            named,
+            value,
+        } => Rule::Alias {
+            content: Box::new(convert_tagged(*content)),
+            named,
+            value,
+        },
+        RuleTagged::Blank => Rule::Blank,
+        RuleTagged::String { value } => Rule::String { value },
+        RuleTagged::Pattern { value, flags } => Rule::Pattern { value, flags },
+        RuleTagged::Symbol { name } => Rule::Symbol { name },
+        RuleTagged::Choice { members } => Rule::Choice {
+            members: members.into_iter().map(convert_tagged).collect(),
+        },
+        RuleTagged::Field { name, content } => Rule::Field {
+            name,
+            content: Box::new(convert_tagged(*content)),
+        },
+        RuleTagged::Seq { members } => Rule::Seq {
+            members: members.into_iter().map(convert_tagged).collect(),
+        },
+        RuleTagged::Repeat { content } => Rule::Repeat {
+            content: Box::new(convert_tagged(*content)),
+        },
+        RuleTagged::Repeat1 { content } => Rule::Repeat1 {
+            content: Box::new(convert_tagged(*content)),
+        },
+        RuleTagged::Prec { value, content } => Rule::Prec {
+            value,
+            content: Box::new(convert_tagged(*content)),
+        },
+        RuleTagged::PrecLeft { value, content } => Rule::PrecLeft {
+            value,
+            content: Box::new(convert_tagged(*content)),
+        },
+        RuleTagged::PrecRight { value, content } => Rule::PrecRight {
+            value,
+            content: Box::new(convert_tagged(*content)),
+        },
+        RuleTagged::PrecDynamic { value, content } => Rule::PrecDynamic {
+            value,
+            content: Box::new(convert_tagged(*content)),
+        },
+        RuleTagged::Token { content } => Rule::Token {
+            content: Box::new(convert_tagged(*content)),
+        },
+        RuleTagged::ImmediateToken { content } => Rule::ImmediateToken {
+            content: Box::new(convert_tagged(*content)),
+        },
+        RuleTagged::Reserved {
+            context_name,
+            content,
+        } => Rule::Reserved {
+            context_name,
+            content: Box::new(convert_tagged(*content)),
+        },
+    }
+}
+
+const KNOWN_TYPES: &[&str] = &[
+    "ALIAS",
+    "BLANK",
+    "STRING",
+    "PATTERN",
+    "SYMBOL",
+    "CHOICE",
+    "FIELD",
+    "SEQ",
+    "REPEAT",
+    "REPEAT1",
+    "PREC",
+    "PREC_LEFT",
+    "PREC_RIGHT",
+    "PREC_DYNAMIC",
+    "TOKEN",
+    "IMMEDIATE_TOKEN",
+    "RESERVED",
+];
 
 impl<'de> Deserialize<'de> for Rule {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct RuleVisitor;
-
-        impl<'de> Visitor<'de> for RuleVisitor {
-            type Value = Rule;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a rule: bare string (symbol ref) or tagged object")
+        let value = Value::deserialize(deserializer)?;
+        let type_name = match &value {
+            Value::Object(map) => map.get("type").and_then(|v| v.as_str()).unwrap_or(""),
+            _ => {
+                return Err(de::Error::custom(
+                    "rule must be a JSON object with a 'type' field",
+                ))
             }
-
-            fn visit_str<E: de::Error>(self, v: &str) -> Result<Rule, E> {
-                Ok(Rule::Symbol(v.to_string()))
-            }
-
-            fn visit_map<M>(self, mut map: M) -> Result<Rule, M::Error>
-            where
-                M: de::MapAccess<'de>,
-            {
-                let mut type_name: Option<String> = None;
-                let mut name: Option<String> = None;
-                let mut str_value: Option<String> = None;
-                let mut int_value: Option<i32> = None;
-                let mut rule_value: Option<Box<Rule>> = None;
-                let mut members: Option<Vec<Rule>> = None;
-                let mut content: Option<Box<Rule>> = None;
-                let mut named: Option<bool> = None;
-                let mut other_fields: Vec<(String, Value)> = Vec::new();
-
-                while let Some(key) = map.next_key::<String>()? {
-                    match key.as_str() {
-                        "type" => type_name = Some(map.next_value()?),
-                        "name" => name = Some(map.next_value()?),
-                        "value" => {
-                            let v: Value = map.next_value()?;
-                            match v {
-                                Value::String(s) => str_value = Some(s),
-                                Value::Number(n) => {
-                                    int_value = n.as_i64().map(|i| i as i32);
-                                }
-                                other => {
-                                    rule_value = Some(Box::new(
-                                        Rule::deserialize(other).map_err(de::Error::custom)?,
-                                    ));
-                                }
-                            }
-                        }
-                        "members" => members = Some(map.next_value()?),
-                        "content" => {
-                            let v: Value = map.next_value()?;
-                            content =
-                                Some(Box::new(Rule::deserialize(v).map_err(de::Error::custom)?));
-                        }
-                        "named" => named = Some(map.next_value()?),
-                        other => {
-                            let v: Value = map.next_value()?;
-                            other_fields.push((other.to_string(), v));
-                        }
-                    }
-                }
-
-                let type_name = type_name.as_deref().unwrap_or("UNKNOWN");
-
-                match type_name {
-                    "SYMBOL" => Ok(Rule::Symbol(
-                        name.ok_or_else(|| de::Error::missing_field("name"))?,
-                    )),
-                    "STRING" => Ok(Rule::String {
-                        value: str_value
-                            .clone()
-                            .ok_or_else(|| de::Error::missing_field("value"))?,
-                    }),
-                    "PATTERN" => Ok(Rule::Pattern {
-                        value: str_value
-                            .clone()
-                            .ok_or_else(|| de::Error::missing_field("value"))?,
-                    }),
-                    "SEQ" => Ok(Rule::Seq {
-                        members: members.ok_or_else(|| de::Error::missing_field("members"))?,
-                    }),
-                    "CHOICE" => Ok(Rule::Choice {
-                        members: members.ok_or_else(|| de::Error::missing_field("members"))?,
-                    }),
-                    "REPEAT" => Ok(Rule::Repeat {
-                        content: content.ok_or_else(|| de::Error::missing_field("content"))?,
-                    }),
-                    "FIELD" => Ok(Rule::Field {
-                        name: name.ok_or_else(|| de::Error::missing_field("name"))?,
-                        content: content.ok_or_else(|| de::Error::missing_field("content"))?,
-                    }),
-                    "PREC" => Ok(Rule::Prec {
-                        value: int_value.ok_or_else(|| de::Error::missing_field("value"))?,
-                        content: content.ok_or_else(|| de::Error::missing_field("content"))?,
-                    }),
-                    "PREC_LEFT" => Ok(Rule::PrecLeft {
-                        value: int_value.ok_or_else(|| de::Error::missing_field("value"))?,
-                        content: content.ok_or_else(|| de::Error::missing_field("content"))?,
-                    }),
-                    "PREC_RIGHT" => Ok(Rule::PrecRight {
-                        value: int_value.ok_or_else(|| de::Error::missing_field("value"))?,
-                        content: content.ok_or_else(|| de::Error::missing_field("content"))?,
-                    }),
-                    "PREC_DYNAMIC" => Ok(Rule::PrecDynamic {
-                        value: rule_value
-                            .ok_or_else(|| de::Error::custom("missing 'value' in PREC_DYNAMIC"))?,
-                        content: content.ok_or_else(|| de::Error::missing_field("content"))?,
-                    }),
-                    "ALIAS" => Ok(Rule::Alias {
-                        value: rule_value
-                            .ok_or_else(|| de::Error::custom("missing 'value' in ALIAS"))?,
-                        named: named.ok_or_else(|| de::Error::missing_field("named"))?,
-                        content: content.ok_or_else(|| de::Error::missing_field("content"))?,
-                    }),
-                    "TOKEN" => Ok(Rule::Token {
-                        content: content.ok_or_else(|| de::Error::missing_field("content"))?,
-                    }),
-                    "IMMEDIATE_TOKEN" => Ok(Rule::ImmediateToken {
-                        content: content.ok_or_else(|| de::Error::missing_field("content"))?,
-                    }),
-                    _ => {
-                        let mut obj = serde_json::Map::new();
-                        obj.insert("type".to_string(), Value::String(type_name.to_string()));
-                        if let Some(n) = name {
-                            obj.insert("name".to_string(), Value::String(n));
-                        }
-                        if let Some(s) = str_value {
-                            obj.insert("value".to_string(), Value::String(s));
-                        }
-                        if let Some(i) = int_value {
-                            obj.insert("value".to_string(), Value::Number(i.into()));
-                        }
-                        for (k, v) in other_fields {
-                            obj.insert(k, v);
-                        }
-                        Ok(Rule::Unknown(Value::Object(obj)))
-                    }
-                }
-            }
+        };
+        if KNOWN_TYPES.contains(&type_name) {
+            serde_json::from_value::<RuleTagged>(value)
+                .map(convert_tagged)
+                .map_err(de::Error::custom)
+        } else {
+            Ok(Rule::Unknown(value))
         }
-
-        deserializer.deserialize_any(RuleVisitor)
     }
 }
