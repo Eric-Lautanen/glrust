@@ -122,6 +122,27 @@ fn ambiguous_expression() {
     let _tree = parser.parse_with_lexer(src, &mut lexer);
 }
 
+/// Error recovery: parser inserts ERROR nodes for invalid input
+#[test]
+#[ignore = "Phase 0.5 — error recovery not yet complete"]
+fn error_recovery_returns_tree() {
+    let mut g = TestGrammarBuilder::new();
+    let a_t = g.terminal("a");
+    let b_t = g.terminal("b");
+    let s_nt = g.nonterminal("S");
+    g.production(s_nt, vec![a_t, s_nt], 0);
+    g.production(s_nt, vec![a_t], 0);
+
+    let grammar = g.build();
+    let parser = Parser::new(grammar);
+    // 'b' is not in the grammar — parser must return a tree with ERROR nodes
+    let src = b"b";
+    let mut lexer = TestLexer::new(src, vec![(b_t, b"b")]);
+    let tree = parser.parse_with_lexer(src, &mut lexer);
+    // The tree should have an ERROR node (not just be empty)
+    assert!(tree.root_node().is_some());
+}
+
 /// Conflicted production: S → "a" S | "a"
 #[test]
 #[ignore = "Phase 0.3 — GLR engine parse loop not yet complete"]

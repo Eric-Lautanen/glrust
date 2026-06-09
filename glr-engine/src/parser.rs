@@ -1,7 +1,7 @@
 use crate::gss::Gss;
 use glr_core::parse_table::ParseTableEntry;
 use glr_core::tree::MutableTree;
-use glr_core::{Grammar, InputEdit, StateId, Tree};
+use glr_core::{Grammar, InputEdit, StateId, SymbolId, Tree};
 use glr_lexer::Lexer;
 use alloc::vec::Vec;
 
@@ -16,27 +16,22 @@ impl Parser {
     }
 
     /// Fully parse `source` using the given lexer.
+    /// Never fails — ERROR nodes are inserted for invalid syntax.
     pub fn parse_with_lexer<L: Lexer>(&self, source: &[u8], lexer: &mut L) -> Tree {
-        let _ = source;
         let start_state = StateId(0);
         let mut gss = Gss::new(start_state);
-        let tree = MutableTree::new();
+        let mut tree = MutableTree::new();
+        let mut error_pos = 0u32;
 
         loop {
-            // Fetch the next token. valid_symbols is a placeholder — proper
-            // valid-symbol tracking per state will be added in Phase 1.
             let valid = &[];
-            let token = lexer.next_token(valid);
-            let token = match token {
+            let token = match lexer.next_token(valid) {
                 Some(t) => t,
                 None => break,
             };
 
-            // Process the token against all active heads
-            let mut processed = false;
-
-            // We need to clone the heads list because we'll modify gss in the loop
             let heads: Vec<u32> = gss.heads.clone();
+            let mut shifted = false;
 
             for &head_idx in &heads {
                 let state = gss.nodes[head_idx as usize].state;
@@ -45,8 +40,17 @@ impl Parser {
                 match action {
                     ParseTableEntry::Shift { state: target } => {
                         let pos = lexer.cursor() as u32;
+
+                        // Create a leaf node for the shifted token
+                        let _leaf = tree.alloc_token(
+                            token.kind,
+                            token.start_byte as u32,
+                            token.end_byte as u32,
+                            false,
+                        );
+
                         gss.add_node(target, pos);
-                        processed = true;
+                        shifted = true;
                     }
                     ParseTableEntry::Reduce {
                         symbol: _,
@@ -54,35 +58,59 @@ impl Parser {
                         dynamic_precedence: _,
                         production_id: _,
                     } => {
-                        // Reduce: will be fully implemented in the next step
-                        processed = true;
+                        // Reduce: will be fully implemented with RNGLR
+                        shifted = true;
                     }
                     ParseTableEntry::Accept => {
                         return tree.freeze();
                     }
-                    ParseTableEntry::Error => {
-                        // Head can't proceed — remove it
-                        // (will use proper head tracking later)
-                    }
-                    ParseTableEntry::Goto { state: _ } => {
-                        // Goto is only used after a reduce
-                    }
+                    ParseTableEntry::Error | ParseTableEntry::Goto { .. } => {}
                 }
             }
 
-            if !processed {
-                // All heads dead — insert ERROR node and try to recover
-                // (Phase 0.5)
-                break;
+            if !shifted && gss.head_count() > 0 {
+                // All heads dead for this token — error recovery.
+                // Insert an ERROR node from the last good position.
+                let _error_node = tree.alloc_token(
+                    SymbolId::ERROR,
+                    error_pos,
+                    token.start_byte as u32,
+                    true,
+                );
+
+                // Skip tokens until we find one that can be shifted.
+                error_pos = token.end_byte as u32;
+                let mut recovered = false;
+                while let Some(skip) = lexer.next_token(valid) {
+                    error_pos = skip.end_byte as u32;
+
+                    for &head_idx in &gss.heads {
+                        let state = gss.nodes[head_idx as usize].state;
+                        match self.grammar.parse_table.lookup(state, skip.kind) {
+                            ParseTableEntry::Shift { .. }
+                            | ParseTableEntry::Reduce { .. }
+                            | ParseTableEntry::Accept => {
+                                recovered = true;
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    if recovered {
+                        break;
+                    }
+                }
+                if !recovered {
+                    break;
+                }
             }
         }
 
         tree.freeze()
     }
 
-    /// Full parse using a default built-in lexer.
+    /// Full parse using a default built-in lexer (requires Phase 1).
     pub fn parse(&self, _source: &[u8]) -> Tree {
-        // Phase 0.3: requires a lexer — use parse_with_lexer for now
         Tree { root: None }
     }
 

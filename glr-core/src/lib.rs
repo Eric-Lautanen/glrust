@@ -19,6 +19,11 @@ pub struct StateId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SymbolId(pub u32);
 
+impl SymbolId {
+    /// Sentinel symbol ID used for ERROR nodes.
+    pub const ERROR: Self = SymbolId(u32::MAX);
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ProductionId(pub u16);
 
