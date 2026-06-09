@@ -17,12 +17,16 @@ pub struct GrammarJson {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum Rule {
-    /// Token string literal (shorthand for `{"type": "STRING", "value": "..."}`)
-    String(String),
-    /// Nonterminal or terminal symbol reference (shorthand for `{"type": "SYMBOL", "name": "..."}`)
+    /// Symbol reference: bare string like `"expression"` is shorthand
+    /// for `{"type": "SYMBOL", "name": "expression"}`.
+    /// Listed before `String` so bare strings always deserialize as Symbol.
     Symbol(String),
+    /// Token string literal: `{"type": "STRING", "value": "..."}`
+    /// Bare strings in grammar.json are always symbol references, not string
+    /// literals, so this variant only matches the tagged form.
+    String(String),
     /// Regex pattern: `{"type": "PATTERN", "value": "..."}`
-    Pattern { pattern: String },
+    Pattern { value: String },
     /// Sequence: `{"type": "SEQ", "members": [...]}`
     Seq { members: Vec<Rule> },
     /// Choice / alternation: `{"type": "CHOICE", "members": [...]}`
